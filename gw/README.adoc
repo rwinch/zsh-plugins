@@ -1,0 +1,8 @@
+Adds gw for support for gradle wrapper wrapper. Supports relative path execution which resolves https://github.com/gdubw/gdub/issues/22
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/gw
+----
