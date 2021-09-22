@@ -1,0 +1,21 @@
+#!/bin/bash
+
+## antora-rename
+##
+## fix links when moving antora adoc files around
+
+BASE_DIR=$1
+
+if [ -z "$BASE_DIR"]; then
+  echo "Usage $0 BASE_DIR"
+  exit
+fi
+
+git --no-pager diff HEAD~1 --diff-filter=R -M | sed -Ez "s%(\nrename to|rename from |similarity index [^\n]+|diff[^\n]+|$BASE_DIR/)%%g" | grep "\S" | while read rename_from_to; do
+  from=$(echo $rename_from_to | cut -f 1 -d " ")
+  to=$(echo $rename_from_to | cut -f 2 -d " ")
+  echo "processing rename from $from to $to"
+  find "$BASE_DIR/../" -name "*.adoc" | while read adoc_file; do
+    sed -i -E "s%xref:$from%xref:$to%g" "$adoc_file"
+  done
+done
