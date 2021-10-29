@@ -1,0 +1,53 @@
+= zsh plugins
+
+These are some plugins that can easily be added using https://github.com/zsh-users/antigen[antigen].
+
+== Usage
+
+* First https://github.com/zsh-users/antigen#installation[install antigen] for your system.
+* https://github.com/zsh-users/antigen#usage[Configure] which plugins you want to use.
+
+For example:
+
+[source,zsh]
+----
+# Load the oh-my-zsh's library
+antigen use oh-my-zsh
+
+antigen bundle extract
+antigen bundle git
+antigen bundle github
+antigen bundle gradle
+antigen bundle mvn
+antigen bundle wd
+
+antigen bundle zsh-users/zsh-syntax-highlighting
+antigen bundle zsh-users/zsh-completions
+#antigen bundle zsh-users/zsh-autosuggestions
+
+antigen bundle rwinch/zsh-plugins antora-rename
+antigen bundle rwinch/zsh-plugins copy
+antigen bundle rwinch/zsh-plugins gh-update
+antigen bundle rwinch/zsh-plugins git-recent
+antigen bundle rwinch/zsh-plugins gw
+
+# Load the theme
+antigen theme robbyrussell
+
+antigen apply
+----
+
+== Development
+
+If you want to load local changes you can run something like this:
+
+[source,zsh]
+----
+antigen bundle /home/rwinch/code/rwinch/zsh-plugins/antora/antora-rename --no-local-clone --force
+----
+
+A few notes from the https://github.com/zsh-users/antigen/wiki/Commands[commands]:
+
+> You can also specify a local directory on your file system as a bundle. In this case, make sure the path you give is the absolute path (i.e., starts with a /). Relative paths are not supported. If the repo you gave is a local directory path, then it is not necessary that this path is a git repo. Please refer to the notes on --no-local-clone below.
+
+> --no-local-clone — This command can be useful if you are developing a plugin and already have a clone on your local file system. If this argument is not given, even if the given repo url is a local path, a clone is made in the $ANTIGEN_BUNDLES directory, and the plugin is loaded from that clone. But, if you give this argument, the plugin is sourced straight from the repo location, without creating a clone. For example,
