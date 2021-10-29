@@ -8,6 +8,8 @@ BASE_DIR=$1
 
 if [ -z "$BASE_DIR"]; then
   echo "Usage $0 BASE_DIR"
+  echo "Try one of the following locations for BASE_DIR"
+  find -name "antora.yml" | xargs git ls-files | xargs dirname | xargs -I{} echo "{}/modules/ROOT/pages"
   exit
 fi
 
