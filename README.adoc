@@ -43,7 +43,8 @@ If you want to load local changes you can run something like this:
 
 [source,zsh]
 ----
-antigen bundle /home/rwinch/code/rwinch/zsh-plugins/antora/antora-rename --no-local-clone --force
+export _ANTIGEN_WARN_DUPLICATES=false
+antigen bundle /home/rwinch/code/rwinch/zsh-plugins/antora/antora-rename --no-local-clone
 ----
 
 A few notes from the https://github.com/zsh-users/antigen/wiki/Commands[commands]:
