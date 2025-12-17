@@ -1,0 +1,14 @@
+pwd=$(pwd)
+owner=$(basename $(dirname $(dirname $(pwd))))
+repo=$(basename $(dirname $(pwd)))
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+gh search prs --repo "$owner/$repo" -B $current_branch --author 'dependabot[bot]' --label "type: dependency-upgrade" --state open  --json number,title,url | jq -c '.[]' | while read -r pr_json; do
+	number=$(echo "$pr_json" | jq -r '.number')
+	title=$(echo "$pr_json" | jq -r '.title')
+	url=$(echo "$pr_json" | jq -r '.url')
+	open $url
+	echo "Merging $url"
+	gh pr checkout -f $url
+	git checkout -
+	git merge -m "$title" -
+done
