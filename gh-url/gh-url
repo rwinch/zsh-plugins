@@ -1,0 +1,145 @@
+#!/bin/zsh
+
+# Default values
+use_https=false
+owner=""
+repository=""
+gh_slug=""
+
+# Usage function
+usage() {
+	cat <<EOF
+Usage: gh-url [OPTIONS] [OWNER/REPOSITORY]
+
+Generate GitHub repository URLs based on the current directory or provided arguments.
+
+OPTIONS:
+  --https              Use HTTPS URL format instead of SSH (default: SSH)
+  --owner OWNER        Override the repository owner
+  --repository REPO    Override the repository name
+  --help               Display this help message
+
+OPTIONAL ARGUMENTS:
+  OWNER/REPOSITORY     GitHub slug in the format owner/repository
+
+BEHAVIOR:
+  - By default, generates SSH URL: git@github.com:OWNER/REPOSITORY.git
+  - With --https flag, generates HTTPS URL: https://github.com/OWNER/REPOSITORY.git
+  - If inside ~/code directory structure, automatically detects owner and repository
+    from the directory path (~/code/OWNER/REPOSITORY/...)
+
+EXAMPLES:
+  gh-url                          # Auto-detect from ~/code/owner/repo/...
+  gh-url --https                  # Auto-detect with HTTPS URL
+  gh-url spring-projects/spring-security
+  gh-url --https spring-projects/spring-security
+  gh-url --owner myorg --repository myrepo
+  gh-url --repository myrepo --owner myorg --https
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--https)
+			use_https=true
+			shift
+			;;
+		--owner)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: --owner requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			owner="$2"
+			shift 2
+			;;
+		--repository)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: --repository requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			repository="$2"
+			shift 2
+			;;
+		--help)
+			usage
+			exit 0
+			;;
+		--*)
+			echo "Error: Unknown option: $1" >&2
+			echo "" >&2
+			usage
+			exit 1
+			;;
+		*)
+			# Positional argument (gh_slug)
+			gh_slug="$1"
+			shift
+			;;
+	esac
+done
+
+# Parse gh_slug if provided
+if [[ -n "$gh_slug" ]]; then
+	if [[ "$gh_slug" =~ ^([^/]+)/([^/]+)$ ]]; then
+		slug_owner="${match[1]}"
+		slug_repository="${match[2]}"
+		
+		# gh_slug sets defaults, but explicit flags override
+		if [[ -z "$owner" ]]; then
+			owner="$slug_owner"
+		fi
+		if [[ -z "$repository" ]]; then
+			repository="$slug_repository"
+		fi
+	else
+		echo "Error: Invalid gh_slug format. Expected: OWNER/REPOSITORY" >&2
+		echo "" >&2
+		usage
+		exit 1
+	fi
+fi
+
+# Auto-detect from ~/code directory structure if not set
+if [[ -z "$owner" || -z "$repository" ]]; then
+	pwd=$(pwd)
+	code_dir="$HOME/code"
+	
+	# Check if we're inside ~/code
+	if [[ "$pwd" == "$code_dir"/* ]]; then
+		# Remove the ~/code prefix
+		relative_path="${pwd#$code_dir/}"
+		
+		# Extract owner (first directory after ~/code)
+		if [[ -z "$owner" ]]; then
+			owner=$(echo "$relative_path" | cut -d'/' -f1)
+		fi
+		
+		# Extract repository (second directory after ~/code)
+		if [[ -z "$repository" ]]; then
+			repository=$(echo "$relative_path" | cut -d'/' -f2)
+		fi
+	fi
+fi
+
+# Validate that we have both owner and repository
+if [[ -z "$owner" || -z "$repository" ]]; then
+	echo "Error: Could not determine owner and repository" >&2
+	echo "Please provide them via arguments or run from within ~/code/OWNER/REPOSITORY/" >&2
+	echo "" >&2
+	usage
+	exit 1
+fi
+
+# Generate and output the URL
+if [[ "$use_https" == true ]]; then
+	echo "https://github.com/${owner}/${repository}.git"
+else
+	echo "git@github.com:${owner}/${repository}.git"
+fi
+
