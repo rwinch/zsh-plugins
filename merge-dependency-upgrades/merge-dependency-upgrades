@@ -11,4 +11,56 @@ gh search prs --repo "$owner/$repo" -B $current_branch --author 'dependabot[bot]
 	gh pr checkout -f $url
 	git checkout -
 	git merge -m "$title" -
+	
+	if [ $? -ne 0 ]; then
+		echo ""
+		echo "❌ Merge conflict detected for: $title"
+		echo "📝 URL: $url"
+		echo ""
+		
+		# Loop until merge is resolved or user continues/aborts
+		while true; do
+			echo "Please resolve the merge conflict and press Enter to validate..."
+			echo "(Or enter 'C' to continue anyway, Ctrl+C to abort)"
+			read -r response
+			
+			# Check if user wants to continue anyway
+			if [ "$response" = "C" ] || [ "$response" = "c" ]; then
+				echo "⚠️  Continuing without validation..."
+				break
+			fi
+			
+		# Check if merge was completed successfully
+		if git diff --quiet && git diff --cached --quiet; then
+			# Check if we're still in a merge state
+			if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
+				echo ""
+				echo "⚠️  Merge is still in progress. Please complete the merge:"
+				echo "   1. Resolve conflicts in the files"
+				echo "   2. Run: git add <resolved-files>"
+				echo "   3. Run: git commit"
+				echo ""
+			else
+				echo ""
+				echo "⚠️  No staged changes detected and no active merge."
+				echo "    Make sure you've resolved and committed the merge."
+				echo ""
+			fi
+		else
+			# There are changes, check if merge is complete
+			if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
+				echo ""
+				echo "⚠️  Merge is still in progress. Please complete the merge:"
+				echo "   1. Stage resolved files: git add <resolved-files>"
+				echo "   2. Commit the merge: git commit"
+				echo ""
+			else
+				echo "✅ Merge completed successfully! Continuing with next PR..."
+				break
+			fi
+		fi
+		done
+	else
+		echo "✅ Merged successfully: $title"
+	fi
 done
