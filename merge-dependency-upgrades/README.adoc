@@ -11,6 +11,7 @@ This script streamlines the process of merging dependency upgrade PRs by automat
 * Automatically finds and processes PRs from `dependabot[bot]` and `github-actions[bot]`
 * Filters PRs by the current branch as the base branch
 * Validates status checks before merging (skips PRs with failing checks)
+* Automatically assigns PRs to the current GitHub user
 * Opens each PR in the browser for review
 * Checks out each PR and merges it into the current branch
 * Handles merge conflicts interactively with helpful prompts
@@ -80,6 +81,7 @@ The script performs the following steps:
    * State: open
 5. **Process each PR**:
    * Validates status checks (skips if any checks failed)
+   * Assigns the PR to the current GitHub user
    * Opens PR URL in browser
    * Checks out the PR branch
    * Returns to previous branch

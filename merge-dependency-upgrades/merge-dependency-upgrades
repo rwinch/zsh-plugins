@@ -2,6 +2,7 @@ pwd=$(pwd)
 owner=$(basename $(dirname $(dirname $(pwd))))
 repo=$(basename $(dirname $(pwd)))
 current_branch=$(git rev-parse --abbrev-ref HEAD)
+current_user=$(gh api user -q .login)
 
 merge_prs() {
 	local pr_json="$1"
@@ -17,6 +18,9 @@ merge_prs() {
 		echo "⏭️  Skipping $url - $failed_checks check(s) not passed: $failed_names"
 		return
 	fi
+	
+	# Set assignee to current GitHub user
+	gh pr edit $number --add-assignee "$current_user"
 	
 	open $url
 	echo "Merging $url"
