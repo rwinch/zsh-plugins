@@ -9,7 +9,7 @@ gh_slug=""
 # Usage function
 usage() {
 	cat <<EOF
-Usage: gh-url [OPTIONS] [OWNER/REPOSITORY]
+Usage: gh-url [OPTIONS] [OWNER/REPOSITORY | URL]
 
 Generate GitHub repository URLs based on the current directory or provided arguments.
 
@@ -21,12 +21,14 @@ OPTIONS:
 
 OPTIONAL ARGUMENTS:
   OWNER/REPOSITORY     GitHub slug in the format owner/repository
+  URL                  Full SSH or HTTPS URL from any Git host (will be echoed back unchanged)
 
 BEHAVIOR:
   - By default, generates SSH URL: git@github.com:OWNER/REPOSITORY.git
   - With --https flag, generates HTTPS URL: https://github.com/OWNER/REPOSITORY.git
   - If inside ~/code directory structure, automatically detects owner and repository
     from the directory path (~/code/OWNER/REPOSITORY/...)
+  - If a full URL is provided (SSH or HTTPS from any Git host), it is returned unchanged
 
 EXAMPLES:
   gh-url                          # Auto-detect from ~/code/owner/repo/...
@@ -35,6 +37,10 @@ EXAMPLES:
   gh-url --https spring-projects/spring-security
   gh-url --owner myorg --repository myrepo
   gh-url --repository myrepo --owner myorg --https
+  gh-url git@github.com:spring-projects/spring-security.git
+  gh-url https://github.com/spring-projects/spring-security.git
+  gh-url git@gitlab.com:mygroup/myproject.git
+  gh-url https://bitbucket.org/myteam/myrepo.git
 
 EOF
 }
@@ -86,7 +92,16 @@ done
 
 # Parse gh_slug if provided
 if [[ -n "$gh_slug" ]]; then
-	if [[ "$gh_slug" =~ ^([^/]+)/([^/]+)$ ]]; then
+	# Check if it's a full SSH URL (git@host:path/to/repo.git or ssh://git@host/path/to/repo.git)
+	if [[ "$gh_slug" =~ ^git@[^:]+:.+\.git$ ]] || [[ "$gh_slug" =~ ^ssh://[^/]+/.+\.git$ ]]; then
+		echo "$gh_slug"
+		exit 0
+	# Check if it's a full HTTPS URL (https://host/path/to/repo.git)
+	elif [[ "$gh_slug" =~ ^https?://[^/]+/.+\.git$ ]]; then
+		echo "$gh_slug"
+		exit 0
+	# Check if it's an owner/repository slug
+	elif [[ "$gh_slug" =~ ^([^/]+)/([^/]+)$ ]]; then
 		slug_owner="${match[1]}"
 		slug_repository="${match[2]}"
 		
@@ -98,7 +113,7 @@ if [[ -n "$gh_slug" ]]; then
 			repository="$slug_repository"
 		fi
 	else
-		echo "Error: Invalid gh_slug format. Expected: OWNER/REPOSITORY" >&2
+		echo "Error: Invalid argument format. Expected: OWNER/REPOSITORY or full URL" >&2
 		echo "" >&2
 		usage
 		exit 1
