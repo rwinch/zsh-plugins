@@ -1,0 +1,80 @@
+= copy
+
+A simple zsh plugin that provides a `copy` alias for copying text to the clipboard on Linux systems.
+
+== Overview
+
+This plugin creates a convenient `copy` alias that pipes output to the X11 clipboard using `xclip`. It's designed for Linux systems using X11 and provides a simple, memorable command for clipboard operations.
+
+== Features
+
+* Simple `copy` alias for clipboard operations
+* Uses `xclip` with the clipboard selection (not just primary selection)
+* Works with piped input
+* Consistent with macOS's `pbcopy` command pattern
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/copy
+----
+
+Or manually by sourcing the plugin file in your `.zshrc`:
+
+[source,bash]
+----
+source /path/to/copy/copy.plugin.zsh
+----
+
+== Usage
+
+Pipe any text output to the `copy` command:
+
+[source,bash]
+----
+echo "text to copy" | copy
+cat file.txt | copy
+pwd | copy
+git log --oneline -1 | copy
+----
+
+== Requirements
+
+* Linux system with X11
+* `xclip` must be installed
+
+To install `xclip`:
+
+[source,bash]
+----
+# Ubuntu/Debian
+sudo apt-get install xclip
+
+# Fedora/RHEL
+sudo dnf install xclip
+
+# Arch Linux
+sudo pacman -S xclip
+----
+
+== Technical Details
+
+The alias expands to:
+
+[source,bash]
+----
+alias copy='xclip -selection clipboard'
+----
+
+This uses the `clipboard` selection (Ctrl+C/Ctrl+V) rather than the `primary` selection (middle-click paste).
+
+== Related Commands
+
+* `xclip -o` or `xclip -selection clipboard -o` - Paste from clipboard
+* `xsel` - Alternative clipboard utility
+* `pbcopy` (macOS) - Similar functionality on macOS
+* `clip.exe` (Windows/WSL) - Similar functionality on Windows
+

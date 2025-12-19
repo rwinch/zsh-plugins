@@ -1,0 +1,96 @@
+= antora-rename
+
+A bash script that automatically fixes xref links when moving Antora AsciiDoc files around.
+
+== Overview
+
+When you rename or move Antora documentation files, all the cross-references (xrefs) pointing to those files need to be updated. This script automates that process by detecting renamed files in your last git commit and updating all xref links throughout your Antora documentation.
+
+== Features
+
+* Automatically detects renamed files from the last git commit
+* Updates all `xref:` links in AsciiDoc files to reflect the new file paths
+* Processes all `.adoc` files in the Antora module
+* Uses git's rename detection (`-M` flag) to identify moved files
+* Helps maintain documentation integrity after file reorganization
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/antora/antora-rename
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+antora-rename BASE_DIR
+----
+
+=== Arguments
+
+* `BASE_DIR` - The base directory containing your Antora pages (typically `modules/ROOT/pages`)
+
+If no argument is provided, the script will suggest possible locations by searching for `antora.yml` files in your repository.
+
+=== Examples
+
+[source,bash]
+----
+# Fix links after renaming files in the main Antora module
+antora-rename modules/ROOT/pages
+
+# Get suggestions for BASE_DIR locations
+antora-rename
+----
+
+== Behavior
+
+The script performs the following steps:
+
+1. Uses `git diff HEAD~1` to detect renamed files in the last commit
+2. Extracts the "from" and "to" paths for each renamed file
+3. For each renamed file:
+   * Searches all `.adoc` files in the module
+   * Replaces `xref:old-path` with `xref:new-path`
+4. Updates are made in-place using `sed`
+
+== Requirements
+
+* Must be run from within a git repository
+* Requires at least one commit with renamed files
+* Uses git's rename detection (similarity index)
+* Requires `sed` for in-place file editing
+
+== Example Workflow
+
+[source,bash]
+----
+# 1. Rename some documentation files
+git mv old-file.adoc new-file.adoc
+git commit -m "Rename documentation file"
+
+# 2. Fix all xref links
+antora-rename modules/ROOT/pages
+
+# 3. Commit the link updates
+git add .
+git commit -m "Update xref links after rename"
+----
+
+== Notes
+
+* The script processes renames from `HEAD~1`, so make sure your rename is in the last commit
+* All xref links are updated, including those in subdirectories
+* The script uses extended regex with `sed -E`
+
+== Related Plugins
+
+* Designed specifically for Antora documentation projects
+* Works well with standard git workflows
+

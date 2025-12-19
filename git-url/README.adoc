@@ -1,0 +1,213 @@
+= git-url
+
+A zsh plugin that generates GitHub (and other Git hosting) repository URLs based on directory structure or provided arguments.
+
+== Overview
+
+This plugin provides a flexible command to generate Git repository URLs without having to type them out manually. It can auto-detect repository information from your `~/code` directory structure, accept GitHub slugs, or construct URLs from explicit parameters. It supports multiple Git hosting platforms and both SSH and HTTPS formats.
+
+== Features
+
+* Auto-detects owner and repository from `~/code/OWNER/REPOSITORY/...` directory structure
+* Accepts GitHub slugs in `owner/repository` format
+* Supports both SSH and HTTPS URL formats
+* Works with multiple Git hosting platforms (GitHub, GitLab, Bitbucket, etc.)
+* Passes through full URLs unchanged
+* Explicit overrides for owner and repository
+* Comprehensive help documentation
+* Validates all inputs before generating URLs
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/git-url
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+git-url [OPTIONS] [OWNER/REPOSITORY | URL]
+----
+
+=== Options
+
+* `--https` - Use HTTPS URL format instead of SSH (default: SSH)
+* `--host HOST` - Specify the Git host domain (default: github.com)
+* `--gitlab` - Shortcut for `--host gitlab.com`
+* `--owner OWNER` - Override the repository owner
+* `--repository REPO` - Override the repository name
+* `--help` - Display help message
+
+=== Optional Arguments
+
+* `OWNER/REPOSITORY` - GitHub slug in the format owner/repository
+* `URL` - Full SSH or HTTPS URL from any Git host (will be echoed back unchanged)
+
+=== Examples
+
+[source,bash]
+----
+# Auto-detect from ~/code/owner/repo/...
+git-url
+
+# Auto-detect with HTTPS URL
+git-url --https
+
+# Use GitHub slug
+git-url spring-projects/spring-security
+
+# Use GitHub slug with HTTPS
+git-url --https spring-projects/spring-security
+
+# GitLab repository
+git-url --gitlab mygroup/myproject
+
+# GitLab with HTTPS
+git-url --host gitlab.com --https mygroup/myproject
+
+# Bitbucket repository
+git-url --host bitbucket.org myteam/myrepo
+
+# Explicit owner and repository
+git-url --owner myorg --repository myrepo
+
+# Explicit with HTTPS
+git-url --repository myrepo --owner myorg --https
+
+# Pass through existing URLs unchanged
+git-url git@github.com:spring-projects/spring-security.git
+git-url https://github.com/spring-projects/spring-security.git
+git-url git@gitlab.com:mygroup/myproject.git
+git-url https://bitbucket.org/myteam/myrepo.git
+----
+
+== Behavior
+
+The command follows this logic:
+
+1. **Parse arguments**: Process all flags and positional arguments
+2. **Check for full URL**: If a complete SSH or HTTPS URL is provided, return it unchanged
+3. **Parse GitHub slug**: If `owner/repository` format is provided, extract owner and repository
+4. **Auto-detect from directory**: If in `~/code/OWNER/REPOSITORY/...`, extract from path
+5. **Validate**: Ensure both owner and repository are determined
+6. **Generate URL**: Create SSH or HTTPS URL based on flags
+
+=== URL Formats
+
+**SSH (default)**:
+----
+git@HOST:OWNER/REPOSITORY.git
+----
+
+**HTTPS**:
+----
+https://HOST/OWNER/REPOSITORY.git
+----
+
+== Auto-Detection
+
+When run from within `~/code/OWNER/REPOSITORY/...`, the plugin automatically extracts:
+
+* **Owner**: First directory after `~/code`
+* **Repository**: Second directory after `~/code`
+
+[source,bash]
+----
+$ pwd
+/Users/rwinch/code/spring-projects/spring-security/src/main
+
+$ git-url
+git@github.com:spring-projects/spring-security.git
+----
+
+== Example Output
+
+[source,bash]
+----
+$ cd ~/code/spring-projects/spring-security
+$ git-url
+git@github.com:spring-projects/spring-security.git
+
+$ git-url --https
+https://github.com/spring-projects/spring-security.git
+
+$ git-url --gitlab mygroup/myproject
+git@gitlab.com:mygroup/myproject.git
+
+$ git-url --host bitbucket.org --https myteam/myrepo
+https://bitbucket.org/myteam/myrepo.git
+----
+
+== Error Handling
+
+The script validates inputs and provides helpful error messages:
+
+[source,bash]
+----
+$ git-url
+Error: Could not determine owner and repository
+Please provide them via arguments or run from within ~/code/OWNER/REPOSITORY/
+
+$ git-url --owner
+Error: --owner requires a value
+
+$ git-url invalid-format
+Error: Invalid argument format. Expected: OWNER/REPOSITORY or full URL
+----
+
+== Use Cases
+
+=== 1. Adding Git Remotes
+
+[source,bash]
+----
+git remote add upstream $(git-url spring-projects/spring-security)
+----
+
+=== 2. Cloning Repositories
+
+[source,bash]
+----
+git clone $(git-url --https myorg/myrepo)
+----
+
+=== 3. Scripting
+
+[source,bash]
+----
+#!/bin/bash
+REPO_URL=$(git-url)
+echo "Repository URL: $REPO_URL"
+----
+
+=== 4. Working with Multiple Hosts
+
+[source,bash]
+----
+# GitHub
+git-url owner/repo
+
+# GitLab
+git-url --gitlab group/project
+
+# Self-hosted GitLab
+git-url --host git.company.com group/project
+----
+
+== Requirements
+
+* zsh shell
+* No external dependencies
+
+== Related Plugins
+
+* link:../git-add-remote[git-add-remote] - Add git remotes using git-url
+* link:../git-clone-convention[git-clone-convention] - Clone repositories following conventions
+* link:../git-clone-as-owner[git-clone-as-owner] - Clone with owner as remote name
+

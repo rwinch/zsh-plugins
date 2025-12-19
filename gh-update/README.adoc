@@ -1,0 +1,104 @@
+= gh-update
+
+A bash script that updates the GitHub CLI (`gh`) to the latest version on Linux systems.
+
+== Overview
+
+This script automatically checks for the latest GitHub CLI release, compares it with your installed version, and prompts you to update if a newer version is available. It downloads and installs the latest `.deb` package directly from GitHub releases.
+
+== Features
+
+* Automatically fetches the latest GitHub CLI release information
+* Compares with your currently installed version
+* Skips update if already on the latest version
+* Downloads the Linux AMD64 `.deb` package
+* Prompts for confirmation before updating
+* Cleans up downloaded package after installation
+* Shows version information after successful update
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/gh-update
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+gh-update
+----
+
+No arguments or options are needed. The script will:
+
+1. Check your current `gh` version
+2. Fetch the latest release version from GitHub
+3. Compare versions and either:
+   * Skip update if already on latest version
+   * Prompt you to update if a newer version is available
+
+== Requirements
+
+* Linux system with `apt`/`dpkg` package management (Debian/Ubuntu-based)
+* `curl` - For fetching release information
+* `jq` - For parsing JSON responses
+* `wget` - For downloading the `.deb` package
+* `sudo` access - For installing the package
+* Existing `gh` installation
+
+To install prerequisites:
+
+[source,bash]
+----
+sudo apt-get install curl jq wget
+----
+
+== Example Output
+
+[source,bash]
+----
+# When already on latest version
+$ gh-update
+Already on latest version v2.40.1.
+
+# When update is available
+$ gh-update
+Press [Enter] to update gh to version v2.40.1
+[Press Enter]
+Selecting previously unselected package gh.
+(Reading database ... 123456 files and directories currently installed.)
+Preparing to unpack gh_latest.deb ...
+Unpacking gh (2.40.1) ...
+Setting up gh (2.40.1) ...
+gh version 2.40.1 (2023-12-13)
+https://github.com/cli/cli/releases/tag/v2.40.1
+----
+
+== Technical Details
+
+The script:
+
+1. Uses the GitHub API to fetch release information: `https://api.github.com/repos/cli/cli/releases/latest`
+2. Extracts the version tag and download URL for the Linux AMD64 `.deb` package
+3. Compares versions using the format from `gh version` output
+4. Downloads to `gh_latest.deb` in the current directory
+5. Installs using `dpkg -i`
+6. Removes the downloaded `.deb` file
+
+== Notes
+
+* This script is specifically for Debian/Ubuntu-based Linux distributions
+* For other distributions, consider using your package manager or the official installation methods
+* The script requires pressing Enter to confirm the update (not fully automated)
+* Set `set -eu` ensures the script exits on errors
+
+== Related Links
+
+* https://github.com/cli/cli[GitHub CLI Repository]
+* https://cli.github.com/[GitHub CLI Official Site]
+

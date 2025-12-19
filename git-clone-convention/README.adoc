@@ -1,6 +1,6 @@
 = git-clone-convention
 
-A zsh plugin that provides a smart `clone` function for cloning Git repositories with intelligent directory management and integration with `git-url`.
+A zsh plugin that provides a smart `clone` function for cloning Git repositories with intelligent directory management and integration with link:../git-url[git-url].
 
 == Features
 

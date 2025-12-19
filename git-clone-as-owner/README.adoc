@@ -1,0 +1,137 @@
+= git-clone-as-owner
+
+A zsh plugin that wraps `git clone` to automatically set the remote name to the repository owner for GitHub URLs.
+
+== Overview
+
+When cloning GitHub repositories, this plugin automatically names the remote after the repository owner instead of using the default "origin". This is particularly useful when you fork repositories and want to distinguish between your fork and the upstream repository.
+
+== Features
+
+* Automatically extracts the owner from GitHub URLs (both SSH and HTTPS)
+* Sets the remote name to the repository owner
+* Supports both SSH (`git@github.com:owner/repo.git`) and HTTPS (`https://github.com/owner/repo.git`) formats
+* Passes through all standard `git clone` options
+* Falls back to default behavior for non-GitHub URLs
+* Respects explicit `--origin` or `-o` flags
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/git-clone-as-owner
+----
+
+Or manually by adding the plugin directory to your `PATH` and creating an alias:
+
+[source,bash]
+----
+alias git-c='/path/to/git-c'
+----
+
+== Usage
+
+Use `git-c` as a drop-in replacement for `git clone`:
+
+[source,bash]
+----
+git-c [OPTIONS] REPOSITORY [DIRECTORY]
+----
+
+All standard `git clone` options are supported.
+
+=== Examples
+
+[source,bash]
+----
+# Clone with remote named 'spring-projects' instead of 'origin'
+git-c git@github.com:spring-projects/spring-security.git
+
+# Clone with HTTPS URL
+git-c https://github.com/spring-projects/spring-security.git
+
+# Clone into a specific directory
+git-c git@github.com:spring-projects/spring-security.git my-security
+
+# Clone with additional git options
+git-c --depth 1 git@github.com:spring-projects/spring-security.git
+
+# Use explicit remote name (overrides automatic detection)
+git-c --origin upstream git@github.com:spring-projects/spring-security.git
+
+# Non-GitHub URLs use default behavior
+git-c git@gitlab.com:mygroup/myproject.git
+----
+
+== Behavior
+
+The wrapper performs the following logic:
+
+1. Parses command-line arguments
+2. Checks if `--origin` or `-o` is already specified:
+   * If yes: passes through to `git clone` unchanged
+3. Extracts the repository URL from arguments
+4. Attempts to extract the GitHub owner from the URL:
+   * SSH format: `git@github.com:owner/repo.git` → owner
+   * HTTPS format: `https://github.com/owner/repo.git` → owner
+5. If a GitHub owner is found:
+   * Clones with `--origin owner` flag
+   * Displays message: "Cloning with remote name 'owner' (GitHub owner)"
+6. If not a GitHub URL:
+   * Uses default `git clone` behavior
+
+== Example Output
+
+[source,bash]
+----
+$ git-c git@github.com:spring-projects/spring-security.git
+Cloning with remote name 'spring-projects' (GitHub owner)
+Cloning into 'spring-security'...
+remote: Enumerating objects: 123456, done.
+remote: Counting objects: 100% (1234/1234), done.
+remote: Compressing objects: 100% (567/567), done.
+remote: Total 123456 (delta 890), reused 1111 (delta 678), pack-reused 122222
+Receiving objects: 100% (123456/123456), 45.67 MiB | 12.34 MiB/s, done.
+Resolving deltas: 100% (89012/89012), done.
+
+$ cd spring-security
+$ git remote -v
+spring-projects  git@github.com:spring-projects/spring-security.git (fetch)
+spring-projects  git@github.com:spring-projects/spring-security.git (push)
+----
+
+== Use Case
+
+This plugin is particularly useful when working with forks:
+
+[source,bash]
+----
+# Clone the upstream repository with remote named 'spring-projects'
+git-c git@github.com:spring-projects/spring-security.git
+
+cd spring-security
+
+# Add your fork as 'rwinch' (using link:../git-add-remote[git-add-remote] plugin)
+git-add-remote rwinch/spring-security
+
+# Now you have clear remote names
+$ git remote -v
+spring-projects  git@github.com:spring-projects/spring-security.git (fetch)
+spring-projects  git@github.com:spring-projects/spring-security.git (push)
+rwinch           git@github.com:rwinch/spring-security.git (fetch)
+rwinch           git@github.com:rwinch/spring-security.git (push)
+----
+
+== Requirements
+
+* Git must be installed
+* Works with any version of Git that supports `--origin` flag
+
+== Related Plugins
+
+* link:../git-add-remote[git-add-remote] - Add git remotes easily
+* link:../git-url[git-url] - Generate GitHub repository URLs
+* link:../git-clone-convention[git-clone-convention] - Clone repositories following directory conventions
+

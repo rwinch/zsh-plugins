@@ -1,0 +1,116 @@
+= git-add-remote
+
+A zsh plugin that simplifies adding git remotes by leveraging the link:../git-url[git-url] plugin to generate repository URLs.
+
+== Overview
+
+This plugin provides a convenient command to add git remotes without manually typing out full repository URLs. It uses the `git-url` plugin to generate the appropriate URL based on your directory structure or provided arguments, then creates a git remote with that URL.
+
+== Features
+
+* Automatically generates repository URLs using `git-url`
+* Auto-detects repository information from `~/code` directory structure
+* Supports both SSH and HTTPS URL formats
+* Customizable remote name (defaults to `rwinch`)
+* Accepts GitHub slugs (owner/repository format)
+* Supports explicit owner and repository overrides
+* Comprehensive help documentation
+* Validates URL generation before adding remote
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/git-add-remote
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+git-add-remote [OPTIONS] [OWNER/REPOSITORY]
+----
+
+=== Options
+
+* `--owner OWNER` - Set the remote name and override the repository owner (default: rwinch)
+* `--https` - Use HTTPS URL format instead of SSH (default: SSH)
+* `--repository REPO` - Override the repository name
+* `--help` - Display help message
+
+=== Optional Arguments
+
+* `OWNER/REPOSITORY` - GitHub slug in the format owner/repository
+
+=== Examples
+
+[source,bash]
+----
+# Add remote 'rwinch' auto-detected from ~/code/rwinch/repo/...
+git-add-remote
+
+# Add remote 'rwinch' with HTTPS URL
+git-add-remote --https
+
+# Add remote 'rwinch' for spring-projects/spring-security
+git-add-remote spring-projects/spring-security
+
+# Add remote 'upstream' for spring-projects/spring-security
+git-add-remote --owner upstream spring-projects/spring-security
+
+# Add remote 'myorg' for myorg/myrepo
+git-add-remote --owner myorg --repository myrepo
+----
+
+== Behavior
+
+The command performs the following steps:
+
+1. Parses command-line arguments
+2. Passes arguments to `git-url` to generate the repository URL
+3. Validates that `git-url` succeeded and returned a URL
+4. Adds a git remote with the specified name and generated URL
+5. Reports success or failure
+
+The remote name is determined by the `--owner` flag (defaults to `rwinch`).
+
+== Requirements
+
+* Must be run from within a git repository
+* Requires the `git-url` plugin to be installed and in PATH
+* Git must be installed
+
+== Example Output
+
+[source,bash]
+----
+$ git-add-remote --owner upstream spring-projects/spring-security
+Adding remote 'upstream' with URL: git@github.com:spring-projects/spring-security.git
+Successfully added remote 'upstream'
+
+$ git remote -v
+origin    git@github.com:rwinch/spring-security.git (fetch)
+origin    git@github.com:rwinch/spring-security.git (push)
+upstream  git@github.com:spring-projects/spring-security.git (fetch)
+upstream  git@github.com:spring-projects/spring-security.git (push)
+----
+
+== Error Handling
+
+The script includes comprehensive error handling:
+
+* Validates that `--owner` has a value
+* Checks that `git-url` executes successfully
+* Ensures `git-url` returns a non-empty URL
+* Reports git remote add failures
+
+== Related Plugins
+
+* link:../git-url[git-url] - Generate GitHub repository URLs (required dependency)
+* link:../git-clone-convention[git-clone-convention] - Clone repositories following conventions
+* link:../git-create-worktrees[git-create-worktrees] - Create git worktrees for multiple branches
+

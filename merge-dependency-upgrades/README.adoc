@@ -1,0 +1,169 @@
+= merge-dependency-upgrades
+
+A bash script that automates merging dependency upgrade pull requests from Dependabot and GitHub Actions bots.
+
+== Overview
+
+This script streamlines the process of merging dependency upgrade PRs by automatically checking out, merging, and handling conflicts for pull requests created by Dependabot and GitHub Actions bots. It's designed for projects with frequent dependency updates that need to be merged into the current branch.
+
+== Features
+
+* Automatically finds and processes PRs from `dependabot[bot]` and `github-actions[bot]`
+* Filters PRs by the current branch as the base branch
+* Opens each PR in the browser for review
+* Checks out each PR and merges it into the current branch
+* Handles merge conflicts interactively with helpful prompts
+* Validates merge completion before continuing
+* Processes PRs with the `type: dependency-upgrade` label for Dependabot
+* Processes all open PRs from GitHub Actions bot
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/merge-dependency-upgrades
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+merge-dependency-upgrades
+----
+
+No arguments are required. The script:
+
+1. Auto-detects the repository owner and name from your directory structure (`~/code/OWNER/REPO`)
+2. Uses the current git branch as the base branch
+3. Processes all matching PRs
+
+== Requirements
+
+* Must be run from within a git repository under `~/code/OWNER/REPO/...`
+* `gh` (GitHub CLI) must be installed and authenticated
+* `jq` must be installed for JSON parsing
+* `open` command for opening URLs in browser (macOS/Linux)
+* Git must be installed
+
+To install prerequisites:
+
+[source,bash]
+----
+# GitHub CLI
+brew install gh  # macOS
+# or follow instructions at https://cli.github.com/
+
+# jq
+brew install jq  # macOS
+sudo apt-get install jq  # Ubuntu/Debian
+----
+
+== Behavior
+
+The script performs the following steps:
+
+1. **Detect repository**: Extracts owner and repository name from directory structure
+2. **Get current branch**: Uses `git rev-parse --abbrev-ref HEAD`
+3. **Fetch Dependabot PRs**: Lists PRs with:
+   * Author: `dependabot[bot]`
+   * Label: `type: dependency-upgrade`
+   * Base: current branch
+   * State: open
+4. **Fetch GitHub Actions PRs**: Lists PRs with:
+   * Author: `github-actions[bot]`
+   * Base: current branch
+   * State: open
+5. **Process each PR**:
+   * Opens PR URL in browser
+   * Checks out the PR branch
+   * Returns to previous branch
+   * Merges the PR with commit message from PR title
+   * If conflict occurs:
+     ** Displays error message with PR details
+     ** Prompts user to resolve conflict
+     ** Validates merge completion
+     ** Allows continuing or aborting
+
+== Example Output
+
+[source,bash]
+----
+$ merge-dependency-upgrades
+Merging https://github.com/spring-projects/spring-security/pull/12345
+✅ Merged successfully: Bump spring-core from 6.0.0 to 6.0.1
+
+Merging https://github.com/spring-projects/spring-security/pull/12346
+✅ Merged successfully: Bump junit from 5.9.0 to 5.9.1
+
+Merging https://github.com/spring-projects/spring-security/pull/12347
+❌ Merge conflict detected for: Bump jackson from 2.14.0 to 2.15.0
+📝 URL: https://github.com/spring-projects/spring-security/pull/12347
+
+Please resolve the merge conflict and press Enter to validate...
+(Or enter 'C' to continue anyway, Ctrl+C to abort)
+[User resolves conflict and commits]
+[Press Enter]
+✅ Merge completed successfully! Continuing with next PR...
+----
+
+== Conflict Resolution
+
+When a merge conflict occurs, the script:
+
+1. Displays the PR title and URL
+2. Pauses and prompts you to resolve the conflict
+3. Provides options:
+   * **Press Enter**: Validates that the merge is complete
+   * **Enter 'C'**: Continues without validation (use with caution)
+   * **Ctrl+C**: Aborts the entire process
+
+The validation checks:
+
+* Whether there are uncommitted changes
+* Whether a merge is still in progress (checks for `MERGE_HEAD`)
+* Provides helpful instructions if merge is incomplete
+
+== Directory Structure Requirement
+
+The script expects to be run from within a directory structure like:
+
+----
+~/code/OWNER/REPOSITORY/...
+----
+
+For example:
+----
+~/code/spring-projects/spring-security/
+~/code/rwinch/my-project/src/main/
+----
+
+The script extracts:
+* **Owner**: `basename $(dirname $(dirname $(pwd)))`
+* **Repository**: `basename $(dirname $(pwd))`
+
+== Notes
+
+* The script processes PRs sequentially, not in parallel
+* Each PR is opened in your default browser for review
+* The merge commit message is taken from the PR title
+* The script uses `gh pr checkout -f` to force checkout
+* Both Dependabot and GitHub Actions PRs are processed
+* Dependabot PRs must have the `type: dependency-upgrade` label
+
+== Safety Features
+
+* Prompts for conflict resolution
+* Validates merge completion
+* Provides clear error messages
+* Allows aborting at any time with Ctrl+C
+* Shows PR URLs for reference
+
+== Related Links
+
+* https://github.com/cli/cli[GitHub CLI]
+* https://docs.github.com/en/code-security/dependabot[Dependabot Documentation]
+
