@@ -8,7 +8,7 @@ usage() {
 	cat <<EOF
 Usage: git-add-remote [OPTIONS] [OWNER/REPOSITORY]
 
-Add a git remote using gh-url to generate the repository URL.
+Add a git remote using git-url to generate the repository URL.
 
 OPTIONS:
   --owner OWNER        Set the remote name and override the repository owner (default: rwinch)
@@ -21,8 +21,8 @@ OPTIONAL ARGUMENTS:
 
 BEHAVIOR:
   - Creates a git remote named after the owner (default: rwinch)
-  - Uses gh-url to generate the repository URL
-  - All arguments are passed to gh-url to determine the URL
+  - Uses git-url to generate the repository URL
+  - All arguments are passed to git-url to determine the URL
 
 EXAMPLES:
   git-add-remote                          # Add remote 'rwinch' auto-detected from ~/code/rwinch/repo/...
@@ -37,8 +37,8 @@ EXAMPLES:
 EOF
 }
 
-# Parse arguments to extract owner and collect all args for gh-url
-gh_url_args=()
+# Parse arguments to extract owner and collect all args for git-url
+git_url_args=()
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--owner)
@@ -49,7 +49,7 @@ while [[ $# -gt 0 ]]; do
 				exit 1
 			fi
 			owner="$2"
-			gh_url_args+=(--owner "$2")
+			git_url_args+=(--owner "$2")
 			shift 2
 			;;
 		--help)
@@ -57,24 +57,24 @@ while [[ $# -gt 0 ]]; do
 			exit 0
 			;;
 		*)
-			# Pass all other arguments to gh-url
-			gh_url_args+=("$1")
+			# Pass all other arguments to git-url
+			git_url_args+=("$1")
 			shift
 			;;
 	esac
 done
 
-# Get the URL from gh-url
-url=$(gh-url "${gh_url_args[@]}")
+# Get the URL from git-url
+url=$(git-url "${git_url_args[@]}")
 exit_code=$?
 
 if [[ $exit_code -ne 0 ]]; then
-	echo "Error: Failed to generate URL from gh-url" >&2
+	echo "Error: Failed to generate URL from git-url" >&2
 	exit $exit_code
 fi
 
 if [[ -z "$url" ]]; then
-	echo "Error: gh-url returned empty URL" >&2
+	echo "Error: git-url returned empty URL" >&2
 	exit 1
 fi
 
