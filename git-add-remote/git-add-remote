@@ -1,0 +1,92 @@
+#!/bin/zsh
+
+# Default values
+owner="rwinch"
+
+# Usage function
+usage() {
+	cat <<EOF
+Usage: git-add-remote [OPTIONS] [OWNER/REPOSITORY]
+
+Add a git remote using gh-url to generate the repository URL.
+
+OPTIONS:
+  --owner OWNER        Set the remote name and override the repository owner (default: rwinch)
+  --https              Use HTTPS URL format instead of SSH (default: SSH)
+  --repository REPO    Override the repository name
+  --help               Display this help message
+
+OPTIONAL ARGUMENTS:
+  OWNER/REPOSITORY     GitHub slug in the format owner/repository
+
+BEHAVIOR:
+  - Creates a git remote named after the owner (default: rwinch)
+  - Uses gh-url to generate the repository URL
+  - All arguments are passed to gh-url to determine the URL
+
+EXAMPLES:
+  git-add-remote                          # Add remote 'rwinch' auto-detected from ~/code/rwinch/repo/...
+  git-add-remote --https                  # Add remote 'rwinch' with HTTPS URL
+  git-add-remote spring-projects/spring-security
+                                      # Add remote 'rwinch' for spring-projects/spring-security
+  git-add-remote --owner upstream spring-projects/spring-security
+                                      # Add remote 'upstream' for spring-projects/spring-security
+  git-add-remote --owner myorg --repository myrepo
+                                      # Add remote 'myorg' for myorg/myrepo
+
+EOF
+}
+
+# Parse arguments to extract owner and collect all args for gh-url
+gh_url_args=()
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--owner)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: --owner requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			owner="$2"
+			gh_url_args+=(--owner "$2")
+			shift 2
+			;;
+		--help)
+			usage
+			exit 0
+			;;
+		*)
+			# Pass all other arguments to gh-url
+			gh_url_args+=("$1")
+			shift
+			;;
+	esac
+done
+
+# Get the URL from gh-url
+url=$(gh-url "${gh_url_args[@]}")
+exit_code=$?
+
+if [[ $exit_code -ne 0 ]]; then
+	echo "Error: Failed to generate URL from gh-url" >&2
+	exit $exit_code
+fi
+
+if [[ -z "$url" ]]; then
+	echo "Error: gh-url returned empty URL" >&2
+	exit 1
+fi
+
+# Add the git remote
+echo "Adding remote '$owner' with URL: $url"
+git remote add "$owner" "$url"
+exit_code=$?
+
+if [[ $exit_code -eq 0 ]]; then
+	echo "Successfully added remote '$owner'"
+else
+	echo "Error: Failed to add remote '$owner'" >&2
+	exit $exit_code
+fi
+
