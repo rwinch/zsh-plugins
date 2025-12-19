@@ -1,0 +1,218 @@
+= git-clone
+
+A zsh plugin that provides a smart `clone` function for cloning Git repositories with intelligent directory management and integration with `git-url`.
+
+== Features
+
+* *Integrates with git-url*: Uses the `git-url` command to generate repository URLs from various input formats
+* *Smart Directory Structure*: Clones repositories into `~/code/${owner}/${repository}/${branch}` following a consistent convention
+* *Custom Remote Names*: Sets the remote name to the repository owner instead of "origin"
+* *Existence Check*: Detects if a repository already exists and navigates to it instead of re-cloning
+* *Automatic Branch Detection*: Detects the default branch and organizes the directory accordingly
+* *Automatic Directory Change*: Changes to the cloned repository directory after successful clone
+
+== Requirements
+
+This plugin requires the https://github.com/rwinch/zsh-plugins/tree/main/git-url[git-url] plugin to be installed and available in your PATH.
+
+== Installation
+
+=== Using Antigen
+
+Add the following lines to your `.antigenrc` or `.zshrc`:
+
+[source,bash]
+----
+# Load git-url (required dependency)
+antigen bundle rwinch/zsh-plugins git-url
+
+# Load git-clone
+antigen bundle rwinch/zsh-plugins git-clone
+----
+
+*Important*: The `git-url` plugin must be loaded before `git-clone`.
+
+=== Manual Installation
+
+1. Clone or download both the `git-url` and `git-clone` plugins
+2. Source the plugin files in your `.zshrc`:
+
+[source,bash]
+----
+source /path/to/git-url/git-url.plugin.zsh
+source /path/to/git-clone/git-clone.plugin.zsh
+----
+
+== Usage
+
+[source,bash]
+----
+clone [GIT-URL-OPTIONS] [GIT-CLONE-OPTIONS]
+----
+
+=== Git-URL Options
+
+These options are passed to `git-url` to generate the repository URL:
+
+* `--https` - Use HTTPS URL format instead of SSH (default: SSH)
+* `--host HOST` - Specify the Git host domain (default: github.com)
+* `--gitlab` - Shortcut for --host gitlab.com
+* `--owner OWNER` - Override the repository owner
+* `--repository REPO` - Override the repository name
+* `OWNER/REPOSITORY` - GitHub slug in the format owner/repository
+* `URL` - Full SSH or HTTPS URL
+
+=== Git-Clone Options
+
+Any other options are passed directly to `git clone`:
+
+* `--branch BRANCH` - Clone a specific branch
+* `--depth N` - Create a shallow clone with history truncated to N commits
+* `--single-branch` - Clone only one branch
+* And any other `git clone` options
+
+== Behavior
+
+1. *Existence Check*: Before cloning, checks if `~/code/${owner}/${repository}` already exists
+   - If it exists, outputs a message and changes directory to:
+     * `~/code/${owner}/${repository}/main` (first priority)
+     * `~/code/${owner}/${repository}/master` (fallback)
+     * `~/code/${owner}/${repository}` (final fallback)
+
+2. *Directory Structure*: Clones into `~/code/${owner}/${repository}/main` initially
+   - Detects the actual default branch of the repository
+   - Renames the directory to match the actual default branch if different from 'main'
+
+3. *Remote Naming*: Sets the remote name to the repository owner (extracted from the URL) instead of 'origin'
+
+4. *Directory Navigation*: Automatically changes to `~/code/${owner}/${repository}/${branch}` after cloning (works in your current shell since `clone` is a function, not a script)
+
+== Examples
+
+=== Basic Usage
+
+Clone a GitHub repository using owner/repository format:
+
+[source,bash]
+----
+clone spring-projects/spring-security
+----
+
+This will:
+
+* Generate the URL: `git@github.com:spring-projects/spring-security.git`
+* Clone into: `~/code/spring-projects/spring-security/main` (or the actual default branch)
+* Set remote name to: `spring-projects`
+* Change directory to: `~/code/spring-projects/spring-security/main`
+
+=== Using HTTPS
+
+[source,bash]
+----
+clone --https spring-projects/spring-security
+----
+
+=== GitLab Repository
+
+[source,bash]
+----
+clone --gitlab mygroup/myproject
+----
+
+=== Custom Host
+
+[source,bash]
+----
+clone --host bitbucket.org myteam/myrepo
+----
+
+=== With Git Clone Options
+
+Clone with shallow history:
+
+[source,bash]
+----
+clone spring-projects/spring-security --depth 1
+----
+
+Clone a specific branch:
+
+[source,bash]
+----
+clone --branch 5.8.x spring-projects/spring-security
+----
+
+=== Auto-detection from Current Directory
+
+If you're already in a `~/code/owner/repository` directory, you can use `git-url` auto-detection:
+
+[source,bash]
+----
+cd ~/code/spring-projects/spring-security/main
+clone  # Will clone spring-projects/spring-security
+----
+
+=== Existing Repository
+
+If the repository already exists:
+
+[source,bash]
+----
+$ clone spring-projects/spring-security
+Repository already exists at /Users/username/code/spring-projects/spring-security
+Changing directory to /Users/username/code/spring-projects/spring-security/main
+----
+
+== Directory Structure
+
+The plugin organizes cloned repositories in the following structure:
+
+----
+~/code/
+  └── ${owner}/
+      └── ${repository}/
+          └── ${branch}/
+              └── (repository contents)
+----
+
+For example:
+
+----
+~/code/
+  └── spring-projects/
+      └── spring-security/
+          └── main/
+              ├── .git/
+              ├── README.md
+              └── ...
+----
+
+If the default branch is `master` instead of `main`, the directory will be named accordingly:
+
+----
+~/code/
+  └── spring-projects/
+      └── spring-framework/
+          └── master/
+              └── ...
+----
+
+== Remote Configuration
+
+Unlike standard `git clone` which creates a remote named `origin`, this plugin names the remote after the repository owner:
+
+[source,bash]
+----
+$ clone spring-projects/spring-security
+$ cd ~/code/spring-projects/spring-security/main
+$ git remote -v
+spring-projects	git@github.com:spring-projects/spring-security.git (fetch)
+spring-projects	git@github.com:spring-projects/spring-security.git (push)
+----
+
+This makes it easier to add additional remotes (like your fork) without naming conflicts.
+
+== License
+
+This plugin is provided as-is for use in your zsh environment.
+
