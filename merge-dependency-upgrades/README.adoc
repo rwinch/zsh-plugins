@@ -10,6 +10,7 @@ This script streamlines the process of merging dependency upgrade PRs by automat
 
 * Automatically finds and processes PRs from `dependabot[bot]` and `github-actions[bot]`
 * Filters PRs by the current branch as the base branch
+* Validates status checks before merging (skips PRs with failing checks)
 * Opens each PR in the browser for review
 * Checks out each PR and merges it into the current branch
 * Handles merge conflicts interactively with helpful prompts
@@ -78,6 +79,7 @@ The script performs the following steps:
    * Base: current branch
    * State: open
 5. **Process each PR**:
+   * Validates status checks (skips if any checks failed)
    * Opens PR URL in browser
    * Checks out the PR branch
    * Returns to previous branch
@@ -93,6 +95,8 @@ The script performs the following steps:
 [source,bash]
 ----
 $ merge-dependency-upgrades
+⏭️  Skipping https://github.com/spring-projects/spring-security/pull/12344 - 1 check(s) not passed: CI Build
+
 Merging https://github.com/spring-projects/spring-security/pull/12345
 ✅ Merged successfully: Bump spring-core from 6.0.0 to 6.0.1
 
@@ -156,6 +160,8 @@ The script extracts:
 
 == Safety Features
 
+* Validates status checks before merging (only merges if all checks are SUCCESS or SKIPPED)
+* Skips PRs with failing checks and displays which checks failed
 * Prompts for conflict resolution
 * Validates merge completion
 * Provides clear error messages
