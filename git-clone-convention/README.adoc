@@ -1,4 +1,4 @@
-= git-clone
+= git-clone-convention
 
 A zsh plugin that provides a smart `clone` function for cloning Git repositories with intelligent directory management and integration with `git-url`.
 
@@ -9,7 +9,7 @@ A zsh plugin that provides a smart `clone` function for cloning Git repositories
 * *Custom Remote Names*: Sets the remote name to the repository owner instead of "origin"
 * *Existence Check*: Detects if a repository already exists and navigates to it instead of re-cloning
 * *Automatic Branch Detection*: Detects the default branch and organizes the directory accordingly
-* *Automatic Directory Change*: Changes to the cloned repository directory after successful clone
+* *Automatic Directory Change*: Changes to the cloned repository directory after successful clone (works in your current shell since `clone` is a function, not a script)
 
 == Requirements
 
@@ -24,23 +24,23 @@ Add the following lines to your `.antigenrc` or `.zshrc`:
 [source,bash]
 ----
 # Load git-url (required dependency)
-antigen bundle rwinch/zsh-plugins git-url
+antigen bundle rwinch/zsh-plugins --loc=git-url
 
-# Load git-clone
-antigen bundle rwinch/zsh-plugins git-clone
+# Load git-clone-convention
+antigen bundle rwinch/zsh-plugins --loc=git-clone-convention
 ----
 
-*Important*: The `git-url` plugin must be loaded before `git-clone`.
+*Important*: The `git-url` plugin must be loaded before `git-clone-convention`.
 
 === Manual Installation
 
-1. Clone or download both the `git-url` and `git-clone` plugins
+1. Clone or download both the `git-url` and `git-clone-convention` plugins
 2. Source the plugin files in your `.zshrc`:
 
 [source,bash]
 ----
 source /path/to/git-url/git-url.plugin.zsh
-source /path/to/git-clone/git-clone.plugin.zsh
+source /path/to/git-clone-convention/git-clone-convention.plugin.zsh
 ----
 
 == Usage

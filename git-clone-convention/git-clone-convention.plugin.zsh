@@ -5,15 +5,15 @@ clone() {
 		cat >&2 <<EOF
 Error: git-url command not found
 
-The git-clone plugin requires the git-url plugin to be installed.
+The git-clone-convention plugin requires the git-url plugin to be installed.
 
-To install using Antigen, add this to your .antigenrc BEFORE loading git-clone:
+To install using Antigen, add this to your .antigenrc BEFORE loading git-clone-convention:
 
     antigen bundle rwinch/zsh-plugins --loc=git-url
 
 For more information, see:
     https://github.com/rwinch/zsh-plugins/tree/main/git-url
-    https://github.com/rwinch/zsh-plugins/tree/main/git-clone
+    https://github.com/rwinch/zsh-plugins/tree/main/git-clone-convention
 
 EOF
 		return 1
@@ -210,3 +210,4 @@ EOF
 
 	return 0
 }
+
