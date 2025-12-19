@@ -1,0 +1,111 @@
+= git-create-worktrees
+
+A zsh plugin that automates the creation of git worktrees for version branches and special branches.
+
+== Overview
+
+This plugin provides a command to automatically create git worktrees for all matching branches from a remote repository. It's particularly useful for projects that maintain multiple version branches (e.g., 5.8.x, 6.0.x, 6.1.x) and need to work on them simultaneously.
+
+== Features
+
+* Automatically detects and processes version branches matching the pattern `\d+\.\d+.x` (e.g., 5.8.x, 6.0.x)
+* Also processes `main` and `docs-build` branches
+* Creates worktrees in the parent directory (`../branch-name`)
+* Automatically creates local tracking branches if they don't exist
+* Skips existing worktrees with informative messages
+* Auto-detects repository owner from `~/code` directory structure
+* Validates git repository and remote existence before processing
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/git-create-worktrees
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+git-create-worktrees [OPTIONS]
+----
+
+=== Options
+
+* `--remote REMOTE` - Specify the remote name (default: repository owner auto-detected from directory structure)
+* `--help` - Display help message
+
+=== Examples
+
+[source,bash]
+----
+# Use owner as remote (auto-detected from ~/code/OWNER/REPOSITORY)
+git-create-worktrees
+
+# Use 'upstream' as remote
+git-create-worktrees --remote upstream
+
+# Use 'origin' as remote
+git-create-worktrees --remote origin
+----
+
+== Behavior
+
+The command performs the following steps:
+
+1. Validates you're in a git repository
+2. Determines the remote to use (defaults to repository owner from directory structure)
+3. Fetches the latest changes from the remote
+4. Iterates through all remote branches
+5. For each branch matching `\d+\.\d+.x`, `main`, or `docs-build`:
+   * Checks if a worktree already exists at `../branch-name`
+   * If not:
+   ** Creates a local tracking branch if it doesn't exist
+   ** Creates a worktree at `../branch-name`
+
+== Requirements
+
+* Must be run from within a git repository
+* The specified remote must exist
+* Parent directory (`../`) must be writable
+* Git worktree support (Git 2.5+)
+
+== Example Output
+
+[source,bash]
+----
+$ git-create-worktrees
+Using remote: spring-projects
+
+Fetching from remote 'spring-projects'...
+
+Processing branch: 5.8.x
+  → Creating local branch '5.8.x' tracking 'spring-projects/5.8.x'
+  → Creating worktree at ../5.8.x
+  ✓ Successfully created worktree: ../5.8.x
+
+Processing branch: 6.0.x
+  → Creating local branch '6.0.x' tracking 'spring-projects/6.0.x'
+  → Creating worktree at ../6.0.x
+  ✓ Successfully created worktree: ../6.0.x
+
+✓ Worktree already exists: ../main
+
+Processing branch: docs-build
+  → Local branch 'docs-build' already exists
+  → Creating worktree at ../docs-build
+  ✓ Successfully created worktree: ../docs-build
+
+Done!
+----
+
+== Related Plugins
+
+* link:../git-url[git-url] - Generate GitHub repository URLs
+* link:../git-add-remote[git-add-remote] - Add git remotes easily
+* link:../git-clone-convention[git-clone-convention] - Clone repositories following conventions
+

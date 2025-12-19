@@ -1,0 +1,168 @@
+#!/bin/zsh
+
+# Default values
+remote=""
+owner=""
+
+# Usage function
+usage() {
+	cat <<EOF
+Usage: git-create-worktrees [OPTIONS]
+
+Create git worktrees for all matching branches from a remote repository.
+
+OPTIONS:
+  --remote REMOTE      Specify the remote name (default: repository owner)
+  --help               Display this help message
+
+BEHAVIOR:
+  - Iterates over all branches on the specified remote
+  - Processes branches that match the pattern \d+\.\d+.x (e.g., 5.8.x, 6.0.x)
+  - Also processes branches named 'main' and 'docs-build'
+  - For each matching branch:
+    * If worktree at ../{branch} exists, skips with a message
+    * Otherwise:
+      - Creates a local tracking branch if it doesn't exist
+      - Creates a worktree at ../{branch} tracking the local branch
+  - Default remote is the repository owner, auto-detected from ~/code directory structure
+    (~/code/OWNER/REPOSITORY/...)
+
+EXAMPLES:
+  git-create-worktrees                    # Use owner as remote (auto-detected)
+  git-create-worktrees --remote upstream  # Use 'upstream' as remote
+  git-create-worktrees --remote origin    # Use 'origin' as remote
+
+REQUIREMENTS:
+  - Must be run from within a git repository
+  - The specified remote must exist
+  - Parent directory (../) must be writable
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--remote)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: --remote requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			remote="$2"
+			shift 2
+			;;
+		--help)
+			usage
+			exit 0
+			;;
+		--*)
+			echo "Error: Unknown option: $1" >&2
+			echo "" >&2
+			usage
+			exit 1
+			;;
+		*)
+			echo "Error: Unexpected positional argument: $1" >&2
+			echo "" >&2
+			usage
+			exit 1
+			;;
+	esac
+done
+
+# Validate we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
+	exit 1
+fi
+
+# Auto-detect owner from ~/code directory structure if remote not set
+if [[ -z "$remote" ]]; then
+	pwd=$(pwd)
+	code_dir="$HOME/code"
+	
+	# Check if we're inside ~/code
+	if [[ "$pwd" == "$code_dir"/* ]]; then
+		# Remove the ~/code prefix
+		relative_path="${pwd#$code_dir/}"
+		
+		# Extract owner (first directory after ~/code)
+		owner=$(echo "$relative_path" | cut -d'/' -f1)
+		
+		if [[ -n "$owner" ]]; then
+			remote="$owner"
+		fi
+	fi
+fi
+
+# Validate that we have a remote
+if [[ -z "$remote" ]]; then
+	echo "Error: Could not determine remote" >&2
+	echo "Please provide --remote or run from within ~/code/OWNER/REPOSITORY/" >&2
+	echo "" >&2
+	usage
+	exit 1
+fi
+
+# Validate the remote exists
+if ! git remote get-url "$remote" > /dev/null 2>&1; then
+	echo "Error: Remote '$remote' does not exist" >&2
+	echo "" >&2
+	echo "Available remotes:" >&2
+	git remote -v >&2
+	exit 1
+fi
+
+echo "Using remote: $remote"
+echo ""
+
+# Fetch the latest from remote
+echo "Fetching from remote '$remote'..."
+if ! git fetch "$remote"; then
+	echo "Error: Failed to fetch from remote '$remote'" >&2
+	exit 1
+fi
+echo ""
+
+# Get all remote branches
+remote_branches=$(git branch -r | grep "^  $remote/" | sed "s|^  $remote/||" | grep -v "HEAD")
+
+# Process each branch
+for branch in ${(f)remote_branches}; do
+	# Check if branch matches version pattern (e.g., 5.8.x, 6.0.x) or is main/docs-build
+	if [[ "$branch" =~ ^[0-9]+\.[0-9]+\.x$ ]] || [[ "$branch" == "main" ]] || [[ "$branch" == "docs-build" ]]; then
+		worktree_path="../${branch}"
+		
+		# Check if worktree already exists
+		if [[ -d "$worktree_path" ]]; then
+			echo "✓ Worktree already exists: $worktree_path"
+		else
+			echo "Processing branch: $branch"
+			
+			# Check if local branch exists
+			if git show-ref --verify --quiet "refs/heads/$branch"; then
+				echo "  → Local branch '$branch' already exists"
+			else
+				echo "  → Creating local branch '$branch' tracking '$remote/$branch'"
+				if ! git branch --track "$branch" "$remote/$branch"; then
+					echo "  ✗ Failed to create local branch '$branch'" >&2
+					continue
+				fi
+			fi
+			
+			# Create worktree
+			echo "  → Creating worktree at $worktree_path"
+			if git worktree add "$worktree_path" "$branch"; then
+				echo "  ✓ Successfully created worktree: $worktree_path"
+			else
+				echo "  ✗ Failed to create worktree at $worktree_path" >&2
+			fi
+		fi
+		echo ""
+	fi
+done
+
+echo "Done!"
+
