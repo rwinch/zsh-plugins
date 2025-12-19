@@ -1,0 +1,83 @@
+#!/bin/zsh
+
+# git-clone wrapper that sets the remote name to the repository owner for GitHub URLs
+
+# Function to extract owner from GitHub URL
+extract_github_owner() {
+	local url="$1"
+	local owner=""
+
+	# Match SSH format: git@github.com:owner/repo.git
+	if [[ "$url" =~ ^git@github\.com:([^/]+)/.* ]]; then
+		owner="${match[1]}"
+	# Match HTTPS format: https://github.com/owner/repo.git
+	elif [[ "$url" =~ ^https?://github\.com/([^/]+)/.* ]]; then
+		owner="${match[1]}"
+	fi
+
+	echo "$owner"
+}
+
+# Parse arguments to find the repository URL and check if --origin is already specified
+repo_url=""
+has_origin=false
+args=()
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--origin|-o)
+			has_origin=true
+			args+=("$1")
+			if [[ -n "$2" && "$2" != -* ]]; then
+				args+=("$2")
+				shift
+			fi
+			shift
+			;;
+		--help|-h)
+			# Pass through to git clone for help
+			command git clone "$@"
+			exit $?
+			;;
+		-*)
+			# Pass through any other options
+			args+=("$1")
+			shift
+			;;
+		*)
+			# This should be the repository URL (first non-option argument)
+			if [[ -z "$repo_url" ]]; then
+				repo_url="$1"
+			fi
+			args+=("$1")
+			shift
+			;;
+	esac
+done
+
+# If --origin was already specified, just pass through to git clone
+if [[ "$has_origin" == true ]]; then
+	command git clone "${args[@]}"
+	exit $?
+fi
+
+# If no repository URL found, pass through to git clone (will show error)
+if [[ -z "$repo_url" ]]; then
+	command git clone "${args[@]}"
+	exit $?
+fi
+
+# Try to extract GitHub owner
+owner=$(extract_github_owner "$repo_url")
+
+# If we found a GitHub owner, use it as the remote name
+if [[ -n "$owner" ]]; then
+	echo "Cloning with remote name '$owner' (GitHub owner)"
+	command git clone --origin "$owner" "${args[@]}"
+else
+	# Not a GitHub URL, use default behavior
+	command git clone "${args[@]}"
+fi
+
+exit $?
+
