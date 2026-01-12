@@ -191,10 +191,17 @@ EOF
 	if [[ $clone_exit -ne 0 ]]; then
 		echo "Error: git clone failed" >&2
 		
-		# Clean up owner directory if we created it
+		# Always clean up the repository directory if it was created
+		if [[ -d "$base_dir" ]]; then
+			echo "Removing repository directory: $base_dir" >&2
+			rm -rf "$base_dir"
+		fi
+		
+		# Clean up owner directory if we created it and it's now empty
 		if [[ "$created_owner_dir" == true ]]; then
-			echo "Removing owner directory: $owner_dir" >&2
-			rmdir "$owner_dir" 2>/dev/null
+			if rmdir "$owner_dir" 2>/dev/null; then
+				echo "Removed owner directory: $owner_dir" >&2
+			fi
 		fi
 		
 		return $clone_exit
