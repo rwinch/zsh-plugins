@@ -167,7 +167,13 @@ EOF
 	fi
 
 	# Create parent directory structure
-	mkdir -p "$HOME/code/$owner"
+	local owner_dir="$HOME/code/$owner"
+	local created_owner_dir=false
+	
+	if [[ ! -d "$owner_dir" ]]; then
+		mkdir -p "$owner_dir"
+		created_owner_dir=true
+	fi
 
 	# Clone into main directory initially
 	local clone_dir="$base_dir/main"
@@ -179,6 +185,13 @@ EOF
 
 	if [[ $clone_exit -ne 0 ]]; then
 		echo "Error: git clone failed" >&2
+		
+		# Clean up owner directory if we created it
+		if [[ "$created_owner_dir" == true ]]; then
+			echo "Removing owner directory: $owner_dir" >&2
+			rmdir "$owner_dir" 2>/dev/null
+		fi
+		
 		return $clone_exit
 	fi
 
