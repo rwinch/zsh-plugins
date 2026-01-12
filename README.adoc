@@ -27,7 +27,9 @@ antigen bundle zsh-users/zsh-completions
 
 antigen bundle rwinch/zsh-plugins antora-rename
 antigen bundle rwinch/zsh-plugins copy
+antigen bundle rwinch/zsh-plugins gh-create-subissue
 antigen bundle rwinch/zsh-plugins gh-update
+antigen bundle rwinch/zsh-plugins get-security-module-names
 antigen bundle rwinch/zsh-plugins git-recent
 antigen bundle rwinch/zsh-plugins gw
 

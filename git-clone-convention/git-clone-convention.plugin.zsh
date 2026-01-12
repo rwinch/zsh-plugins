@@ -113,6 +113,11 @@ BEHAVIOR:
   - Renames directory to actual default branch if different from 'main'
   - Sets remote name to OWNER instead of 'origin'
   - Changes directory to ~/code/OWNER/REPOSITORY/BRANCH after cloning
+  - If wd command exists, creates shortcuts for spring-prefixed owners/repos:
+    * Owner starting with 'spring-' creates shortcut with prefix removed
+      (e.g., spring-projects → 'wd projects' points to ~/code/spring-projects)
+    * Repo starting with 'spring-' creates shortcut with prefix removed
+      (e.g., spring-security → 'wd security' points to the cloned directory)
 
 EXAMPLES:
   clone spring-projects/spring-security
@@ -219,6 +224,24 @@ EOF
 		echo "Changed directory to $new_dir"
 	else
 		echo "Changed directory to $clone_dir"
+	fi
+
+	# Add wd shortcuts if wd command exists
+	if command -v wd &> /dev/null; then
+		# Add shortcut for owner if it starts with spring-
+		if [[ "$owner" == spring-* ]]; then
+			local owner_shortcut="${owner#spring-}"
+			echo "Adding wd shortcut: $owner_shortcut -> $owner_dir"
+			wd add "$owner_shortcut" "$owner_dir" &> /dev/null
+		fi
+
+		# Add shortcut for repo if it starts with spring-
+		if [[ "$repo" == spring-* ]]; then
+			local repo_shortcut="${repo#spring-}"
+			local current_dir=$(pwd)
+			echo "Adding wd shortcut: $repo_shortcut -> $current_dir"
+			wd add "$repo_shortcut" "$current_dir" &> /dev/null
+		fi
 	fi
 
 	return 0

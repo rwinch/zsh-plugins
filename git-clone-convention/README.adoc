@@ -10,6 +10,7 @@ A zsh plugin that provides a smart `clone` function for cloning Git repositories
 * *Existence Check*: Detects if a repository already exists and navigates to it instead of re-cloning
 * *Automatic Branch Detection*: Detects the default branch and organizes the directory accordingly
 * *Automatic Directory Change*: Changes to the cloned repository directory after successful clone (works in your current shell since `clone` is a function, not a script)
+* *wd Integration*: Automatically creates shortcuts using the `wd` command for spring-prefixed owners and repositories (if `wd` is available)
 
 == Requirements
 
@@ -87,6 +88,12 @@ Any other options are passed directly to `git clone`:
 
 4. *Directory Navigation*: Automatically changes to `~/code/${owner}/${repository}/${branch}` after cloning (works in your current shell since `clone` is a function, not a script)
 
+5. *wd Shortcuts* (if `wd` command is available):
+   - If the owner starts with `spring-`, creates a shortcut with the prefix removed
+     * Example: `spring-projects` → `wd projects` points to `~/code/spring-projects`
+   - If the repository starts with `spring-`, creates a shortcut with the prefix removed
+     * Example: `spring-security` → `wd security` points to `~/code/spring-projects/spring-security/main`
+
 == Examples
 
 === Basic Usage
@@ -104,6 +111,9 @@ This will:
 * Clone into: `~/code/spring-projects/spring-security/main` (or the actual default branch)
 * Set remote name to: `spring-projects`
 * Change directory to: `~/code/spring-projects/spring-security/main`
+* Create wd shortcuts (if `wd` is available):
+  - `wd projects` → `~/code/spring-projects`
+  - `wd security` → `~/code/spring-projects/spring-security/main`
 
 === Using HTTPS
 
