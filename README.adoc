@@ -49,6 +49,18 @@ export _ANTIGEN_WARN_DUPLICATES=false
 antigen bundle /home/rwinch/code/rwinch/zsh-plugins/antora/antora-rename --no-local-clone
 ----
 
+=== Reloading Changes
+
+After making changes to your `.antigenrc` or adding new plugins, reload them with:
+
+[source,zsh]
+----
+antigen reset
+source ~/.zshrc
+----
+
+The `antigen reset` command clears Antigen's cache and forces a fresh load of all bundles.
+
 A few notes from the https://github.com/zsh-users/antigen/wiki/Commands[commands]:
 
 > You can also specify a local directory on your file system as a bundle. In this case, make sure the path you give is the absolute path (i.e., starts with a /). Relative paths are not supported. If the repo you gave is a local directory path, then it is not necessary that this path is a git repo. Please refer to the notes on --no-local-clone below.
