@@ -4,20 +4,20 @@ Custom zsh themes that can be loaded with antigen from this repo.
 
 == rdubbs
 
-A variant of the default oh-my-zsh `robbyrussell` theme. When you are inside a git repository, the prompt shows the current directory and the git branch plus the *repository path* (no host), so you can tell which repo you're in at a glance.
+A variant of the default oh-my-zsh `robbyrussell` theme. When you are inside a git *worktree* under `~/code` (exactly three path segments: org/repo/worktree), the prompt shows the current directory and the git branch plus the *repo name*, so you can tell which repo you're in at a glance.
 
 Example: inside `~/code/spring-projects/spring-security/main` you see:
 
 [source,text]
 ----
-main git:(main@spring-projects/spring-security)
+main git:(main@spring-security)
 ----
+
+In a main clone (e.g. `~/code/rwinch/zsh-plugins`) the prompt shows only the branch, e.g. `git:(main)`—no repo name.
 
 This is especially useful when using link:https://git-scm.com/docs/git-worktree[git worktrees].
 With worktrees, the prompt normally shows only the worktree directory name (e.g. `main`).
-If you have several shells open, you might see `main` in five tabs but each is in a different repository—the repo path in the prompt makes it clear which repo each shell is in.
-
-The repo path is the path from your home directory with the first component stripped (e.g. `code/spring-projects/spring-security` → `spring-projects/spring-security`).
+If you have several shells open, you might see `main` in five tabs but each is in a different repository—the repo name in the prompt makes it clear which repo each shell is in.
 
 === Usage
 
