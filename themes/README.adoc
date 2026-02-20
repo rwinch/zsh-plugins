@@ -1,0 +1,46 @@
+= Themes
+
+Custom zsh themes that can be loaded with antigen from this repo.
+
+== rdubbs
+
+A variant of the default oh-my-zsh `robbyrussell` theme. When you are inside a git repository, the prompt shows the current directory and the git branch plus the *repository path* (no host), so you can tell which repo you're in at a glance.
+
+Example: inside `~/code/spring-projects/spring-security/main` you see:
+
+[source,text]
+----
+main git:(main@spring-projects/spring-security)
+----
+
+This is especially useful when using link:https://git-scm.com/docs/git-worktree[git worktrees].
+With worktrees, the prompt normally shows only the worktree directory name (e.g. `main`).
+If you have several shells open, you might see `main` in five tabs but each is in a different repository—the repo path in the prompt makes it clear which repo each shell is in.
+
+The repo path is the path from your home directory with the first component stripped (e.g. `code/spring-projects/spring-security` → `spring-projects/spring-security`).
+
+=== Usage
+
+Use this theme instead of `robbyrussell` by loading it from this repo:
+
+[source,zsh]
+----
+# Load the theme from this repo (requires antigen bundle rwinch/zsh-plugins to be used for at least one plugin, or antigen will clone it when applying the theme)
+antigen theme rwinch/zsh-plugins rdubbs
+----
+
+Ensure the `git` plugin is loaded (e.g. `antigen bundle git`) so that prompt color variables are available.
+
+=== Trying the theme locally (without publishing)
+
+To try the theme from your local clone without pushing to the remote, source it directly *after* `antigen apply` in your `.zshrc` or `.antigenrc`:
+
+[source,zsh]
+----
+antigen apply
+
+# Load rdubbs theme from local clone (optional; comment out to use your normal theme)
+source ~/code/rwinch/zsh-plugins/themes/rdubbs.zsh-theme
+----
+
+Use the real path to your clone (e.g. `~/code/rwinch/zsh-plugins` or `/Users/rw036207/code/rwinch/zsh-plugins`). You can keep `antigen theme robbyrussell` (or any theme) above; this `source` overrides the prompt with the local theme.

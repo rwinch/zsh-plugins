@@ -33,8 +33,9 @@ antigen bundle rwinch/zsh-plugins get-security-module-names
 antigen bundle rwinch/zsh-plugins git-recent
 antigen bundle rwinch/zsh-plugins gw
 
-# Load the theme
+# Load the theme (use rdubbs to show git repo path in the prompt)
 antigen theme robbyrussell
+# antigen theme rwinch/zsh-plugins rdubbs
 
 antigen apply
 ----
