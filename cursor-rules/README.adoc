@@ -1,15 +1,15 @@
 = cursor-rules
 
-A zsh plugin that links your Cursor rules into the current directory's git repository so that `$git_root/.cursor/rules` is a symlink to your shared rules.
+A zsh plugin that provides a command to link your Cursor rules into the current directory's git repository. This ensures that `$git_root/.cursor/rules` is a symlink to your shared rules.
 
 == Overview
 
-When you are inside a git repository, this plugin:
+When you are inside a git repository, you can run the `cursor-rules` command. The plugin will:
 
-* Sets `git_root` to the root of that repository (e.g. from `git rev-parse --show-toplevel`).
-* Ensures `$git_root/.cursor/rules` exists as a symlink to `~/code/rwinch/.cursor/rules`.
+* Find the root of the repository (using `git rev-parse --show-toplevel`).
+* Ensure `$git_root/.cursor/rules` exists as a symlink to `~/code/rwinch/.cursor/rules`.
 
-The symlink is created or updated when you `cd` into a directory (and on shell startup for the initial directory). Outside a git repository, `git_root` is unset.
+This is useful for explicitly sharing common AI coding rules across your local git repositories without automatically applying them everywhere.
 
 == Installation
 
@@ -24,13 +24,17 @@ Or source the plugin directory so that `cursor-rules.plugin.zsh` is loaded by yo
 
 == Usage
 
-No commands to run. Once the plugin is loaded:
+Run the following command while inside a git repository:
 
-* `git_root` is set (exported) when your current directory is inside a git repo; it is unset when you are not.
-* `$git_root/.cursor/rules` is a symlink to `~/code/rwinch/.cursor/rules` for the repo at `$git_root`.
+[source,bash]
+----
+cursor-rules
+----
+
+This will create or update the `.cursor/rules` symlink in the repository's root directory pointing to `~/code/rwinch/.cursor/rules`.
 
 == Requirements
 
 * Zsh
 * Git (for `git rev-parse --show-toplevel`)
-* The directory `~/code/rwinch/.cursor/rules` should exist; the plugin skips creating the symlink if it does not.
+* The directory `~/code/rwinch/.cursor/rules` should exist; the plugin will display an error if it does not.
