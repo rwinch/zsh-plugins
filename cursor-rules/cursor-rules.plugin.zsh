@@ -1,7 +1,7 @@
 # Cursor rules plugin: Provides a command to symlink ~/code/rwinch/.cursor/rules 
 # into the current directory's .cursor/rules.
 
-readonly CURSOR_RULES_SOURCE=~/code/rwinch/.cursor/rules
+export CURSOR_RULES_SOURCE=~/code/rwinch/.cursor/rules
 
 function cursor-rules() {
   if [[ ! -d "$CURSOR_RULES_SOURCE" ]]; then
