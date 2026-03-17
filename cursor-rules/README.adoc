@@ -1,15 +1,14 @@
 = cursor-rules
 
-A zsh plugin that provides a command to link your Cursor rules into the current directory's git repository. This ensures that `$git_root/.cursor/rules` is a symlink to your shared rules.
+A zsh plugin that provides a command to link your Cursor rules into the current directory. This ensures that `$PWD/.cursor/rules` is a symlink to your shared rules.
 
 == Overview
 
-When you are inside a git repository, you can run the `cursor-rules` command. The plugin will:
+When you run the `cursor-rules` command, the plugin will:
 
-* Find the root of the repository (using `git rev-parse --show-toplevel`).
-* Ensure `$git_root/.cursor/rules` exists as a symlink to `~/code/rwinch/.cursor/rules`.
+* Ensure `$PWD/.cursor/rules` exists as a symlink to `~/code/rwinch/.cursor/rules`.
 
-This is useful for explicitly sharing common AI coding rules across your local git repositories without automatically applying them everywhere.
+This is useful for explicitly sharing common AI coding rules into your local project directories.
 
 == Installation
 
@@ -24,17 +23,16 @@ Or source the plugin directory so that `cursor-rules.plugin.zsh` is loaded by yo
 
 == Usage
 
-Run the following command while inside a git repository:
+Run the following command while inside a directory where you want your cursor rules applied:
 
 [source,bash]
 ----
 cursor-rules
 ----
 
-This will create or update the `.cursor/rules` symlink in the repository's root directory pointing to `~/code/rwinch/.cursor/rules`.
+This will create or update the `.cursor/rules` symlink in the current directory pointing to `~/code/rwinch/.cursor/rules`.
 
 == Requirements
 
 * Zsh
-* Git (for `git rev-parse --show-toplevel`)
 * The directory `~/code/rwinch/.cursor/rules` should exist; the plugin will display an error if it does not.
