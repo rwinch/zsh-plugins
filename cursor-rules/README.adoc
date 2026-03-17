@@ -1,0 +1,36 @@
+= cursor-rules
+
+A zsh plugin that links your Cursor rules into the current directory's git repository so that `$git_root/.cursor/rules` is a symlink to your shared rules.
+
+== Overview
+
+When you are inside a git repository, this plugin:
+
+* Sets `git_root` to the root of that repository (e.g. from `git rev-parse --show-toplevel`).
+* Ensures `$git_root/.cursor/rules` exists as a symlink to `~/code/rwinch/.cursor/rules`.
+
+The symlink is created or updated when you `cd` into a directory (and on shell startup for the initial directory). Outside a git repository, `git_root` is unset.
+
+== Installation
+
+With antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/cursor-rules
+----
+
+Or source the plugin directory so that `cursor-rules.plugin.zsh` is loaded by your framework.
+
+== Usage
+
+No commands to run. Once the plugin is loaded:
+
+* `git_root` is set (exported) when your current directory is inside a git repo; it is unset when you are not.
+* `$git_root/.cursor/rules` is a symlink to `~/code/rwinch/.cursor/rules` for the repo at `$git_root`.
+
+== Requirements
+
+* Zsh
+* Git (for `git rev-parse --show-toplevel`)
+* The directory `~/code/rwinch/.cursor/rules` should exist; the plugin skips creating the symlink if it does not.
