@@ -1,0 +1,448 @@
+#!/bin/zsh
+
+# ---- globals populated by build_worktree_map ----
+typeset -a wt_branches   # parallel array: branch name at index i
+typeset -a wt_paths      # parallel array: worktree path at index i
+
+remote=""
+typeset -a branches      # positional args, in order
+
+# Usage function
+usage() {
+	cat <<EOF
+Usage: git-merge-forward --remote REMOTE BRANCH1 [BRANCH2 ...]
+
+Merge a chain of branches forward: current branch -> BRANCH1 -> BRANCH2 -> ...
+Each successive pair in the chain (current, BRANCH1), (BRANCH1, BRANCH2), etc.
+is merged using identical logic (no special-casing the first hop).
+
+OPTIONS:
+  --remote, -r REMOTE   Remote to sync from before merging (required)
+  --help                Display this help message
+
+ARGUMENTS:
+  BRANCH1 [BRANCH2 ...] Ordered chain of branches to merge forward through
+                        (at least one branch is required)
+
+BEHAVIOR:
+  - Builds a map of branch -> worktree (via 'git worktree list --porcelain')
+    so operations run in whichever directory already has each branch checked
+    out, printing which directory is used for every step.
+  - Fetches REMOTE once, then syncs every branch in scope (current branch +
+    all BRANCH args) with REMOTE/<branch> before any merging starts:
+      * Behind only -> fast-forwarded silently.
+      * Missing locally -> created from REMOTE/<branch>.
+      * Ahead of (or diverged from) REMOTE -> pauses, shows the differing
+        commits, and lets you reset to REMOTE or resolve it elsewhere and
+        recheck, before continuing.
+  - For each hop (source -> target): verifies target's worktree is clean,
+    checks out target if needed, runs 'git merge --no-edit <source>'.
+  - On conflict, prints the conflicted directory and exact resume commands,
+    then blocks on a prompt until you resolve/commit, force-continue, or
+    Ctrl+C to abort.
+
+EXAMPLES:
+  git-merge-forward --remote origin 5.8.x 6.0.x main
+  git-merge-forward -r upstream release/6.1.x main
+
+REQUIREMENTS:
+  - Must be run from within a git repository
+  - REMOTE must exist
+  - Every worktree touched must have a clean working tree
+
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Parse: git worktree list --porcelain
+#
+# Format (blocks separated by blank line), e.g.:
+#   worktree /path/to/main
+#   HEAD abc123...
+#   branch refs/heads/main
+#
+#   worktree /path/to/6.0.x
+#   HEAD def456...
+#   branch refs/heads/6.0.x
+#
+#   worktree /path/to/detached-wt
+#   HEAD 789abc...
+#   detached
+#
+# Detached-HEAD worktrees have no "branch" line at all.
+# ---------------------------------------------------------------------------
+build_worktree_map() {
+	local current_path=""
+	local line
+
+	wt_branches=()
+	wt_paths=()
+
+	while IFS= read -r line; do
+		case "$line" in
+			"worktree "*)
+				current_path="${line#worktree }"
+				;;
+			"branch "*)
+				local ref="${line#branch }"
+				local br="${ref#refs/heads/}"
+				wt_branches+=("$br")
+				wt_paths+=("$current_path")
+				;;
+			"")
+				current_path=""
+				;;
+		esac
+	done < <(git worktree list --porcelain)
+}
+
+# Echoes the resolved directory for a branch: the worktree path if the
+# branch is checked out somewhere, otherwise the invoking directory (pwd).
+resolve_dir_for_branch() {
+	local branch="$1"
+	local i
+
+	for (( i = 1; i <= ${#wt_branches[@]}; i++ )); do
+		if [[ "${wt_branches[$i]}" == "$branch" ]]; then
+			echo "${wt_paths[$i]}"
+			return 0
+		fi
+	done
+
+	# Not checked out anywhere -- current invoking directory is fine.
+	pwd
+}
+
+# True (0) if `branch` is currently checked out in some worktree.
+is_branch_checked_out() {
+	local branch="$1"
+	local i
+
+	for (( i = 1; i <= ${#wt_branches[@]}; i++ )); do
+		[[ "${wt_branches[$i]}" == "$branch" ]] && return 0
+	done
+	return 1
+}
+
+is_clean() {
+	local dir="$1"
+	[[ -z "$(git -C "$dir" status --porcelain)" ]]
+}
+
+require_clean_or_die() {
+	local dir="$1"
+	if ! is_clean "$dir"; then
+		echo "Error: Working tree is not clean: $dir" >&2
+		echo "Please commit, stash, or clean up changes there and re-run." >&2
+		exit 1
+	fi
+}
+
+# Pauses when `branch` has commits that '$remote/$branch' doesn't have.
+# Shows the differing commits, then loops on a prompt:
+#   Enter -> recheck (assume the user resolved it in another console)
+#   r     -> reset the branch to match $remote/$branch, discarding local-only commits
+#   Ctrl+C -> abort
+# Sets `sync_behind`/`sync_ahead` to the final (ahead == 0) counts on return.
+handle_ahead_of_remote() {
+	local branch="$1"
+	local dir="$2"
+	local checked_out=0
+	is_branch_checked_out "$branch" && checked_out=1
+
+	while true; do
+		read sync_behind sync_ahead <<< "$(git -C "$dir" rev-list --left-right --count "$remote/$branch...$branch")"
+
+		if [[ "$sync_ahead" -eq 0 ]]; then
+			return 0
+		fi
+
+		echo ""
+		echo "⚠️  '$branch' has diverged from '$remote/$branch' ($sync_ahead ahead, $sync_behind behind) (dir: $dir)"
+		echo ""
+		echo "Commits only on '$branch':"
+		git --no-pager -C "$dir" log --oneline "$remote/$branch..$branch"
+		if [[ "$sync_behind" -gt 0 ]]; then
+			echo ""
+			echo "Commits only on '$remote/$branch':"
+			git --no-pager -C "$dir" log --oneline "$branch..$remote/$branch"
+		fi
+		echo ""
+		echo "[Enter=recheck after resolving elsewhere / r=reset to remote / Ctrl+C=abort]"
+		local response
+		if ! read -r response </dev/tty; then
+			echo "Error: No terminal available to prompt for input (dir: $dir)" >&2
+			return 1
+		fi
+
+		if [[ "$response" == "r" || "$response" == "R" ]]; then
+			if [[ $checked_out -eq 1 ]]; then
+				if ! git -C "$dir" reset --hard "$remote/$branch"; then
+					echo "✗ Failed to reset '$branch' to '$remote/$branch'" >&2
+					return 1
+				fi
+			else
+				if ! git -C "$dir" branch -f "$branch" "$remote/$branch"; then
+					echo "✗ Failed to reset '$branch' to '$remote/$branch'" >&2
+					return 1
+				fi
+			fi
+			echo "  → Reset '$branch' to '$remote/$branch'"
+		fi
+		# Loop back and recheck, whether reset or plain Enter.
+	done
+}
+
+# Ensures the local `branch` matches remote/branch, pausing interactively
+# if the local branch is ahead of (or diverged from) the remote.
+sync_branch_with_remote() {
+	local branch="$1"
+	local dir
+	dir=$(resolve_dir_for_branch "$branch")
+
+	echo "Syncing '$branch' with '$remote/$branch' (dir: $dir)"
+
+	require_clean_or_die "$dir"
+
+	if ! git -C "$dir" show-ref --verify --quiet "refs/heads/$branch"; then
+		# Branch doesn't exist locally yet -- create it tracking remote.
+		if ! git fetch . "$remote/$branch:$branch" > /dev/null 2>&1; then
+			echo "✗ Failed to create local branch '$branch' from '$remote/$branch'" >&2
+			return 1
+		fi
+		echo "  → Created local branch '$branch' from '$remote/$branch'"
+		echo "✓ '$branch' is up to date with '$remote/$branch'"
+		return 0
+	fi
+
+	local checked_out=0
+	is_branch_checked_out "$branch" && checked_out=1
+
+	if ! handle_ahead_of_remote "$branch" "$dir"; then
+		return 1
+	fi
+
+	if [[ "$sync_behind" -gt 0 ]]; then
+		if [[ $checked_out -eq 1 ]]; then
+			if ! git -C "$dir" merge --ff-only "$remote/$branch" > /dev/null 2>&1; then
+				echo "✗ Cannot fast-forward '$branch' to '$remote/$branch' (dir: $dir)" >&2
+				return 1
+			fi
+		else
+			if ! git fetch . "$remote/$branch:$branch" > /dev/null 2>&1; then
+				echo "✗ Cannot fast-forward '$branch' to '$remote/$branch'" >&2
+				return 1
+			fi
+		fi
+	fi
+
+	echo "✓ '$branch' is up to date with '$remote/$branch'"
+	return 0
+}
+
+# Prints the conflict banner + resume instructions, blocks on /dev/tty,
+# loops until resolved/force/abort.
+handle_conflict() {
+	local dir="$1"
+	local source="$2"
+	local target="$3"
+
+	echo ""
+	echo "✗ Merge conflict merging '$source' into '$target'"
+	echo ""
+	echo "Resolve conflicts in: $dir"
+	echo "Then run:"
+	echo "  git -C \"$dir\" add <conflicted files>   (or: git -C \"$dir\" add -A)"
+	echo "  git -C \"$dir\" commit --no-edit"
+	echo ""
+
+	while true; do
+		echo "Resolved? [Enter=resume / f=force continue / Ctrl+C=abort]"
+		local response
+		if ! read -r response </dev/tty; then
+			echo "Error: No terminal available to prompt for input (dir: $dir)" >&2
+			exit 1
+		fi
+
+		if [[ "$response" == "f" || "$response" == "F" ]]; then
+			echo "⚠️  Force-continuing without validation..."
+			return 0
+		fi
+
+		typeset -a problems
+		problems=()
+
+		if git -C "$dir" rev-parse -q --verify MERGE_HEAD > /dev/null 2>&1; then
+			problems+=("MERGE_HEAD still present -- merge was not committed")
+		fi
+
+		local unmerged
+		unmerged=$(git -C "$dir" diff --name-only --diff-filter=U)
+		if [[ -n "$unmerged" ]]; then
+			problems+=("Unmerged paths remain:")
+			problems+=("${(f)unmerged}")
+		fi
+
+		if ! is_clean "$dir"; then
+			problems+=("Working tree is not clean (uncommitted changes present)")
+		fi
+
+		if [[ ${#problems[@]} -eq 0 ]]; then
+			echo "✓ Merge conflict resolved"
+			return 0
+		fi
+
+		echo ""
+		echo "Still not resolved:"
+		local p
+		for p in "${problems[@]}"; do
+			echo "  - $p"
+		done
+		echo ""
+	done
+}
+
+# Performs one hop: merge `source` into `target`.
+merge_branch() {
+	local source="$1"
+	local target="$2"
+	local dir
+	dir=$(resolve_dir_for_branch "$target")
+
+	echo ""
+	echo "Merging '$source' -> '$target' (dir: $dir)"
+
+	require_clean_or_die "$dir"
+
+	local current
+	current=$(git -C "$dir" rev-parse --abbrev-ref HEAD)
+	if [[ "$current" != "$target" ]]; then
+		echo "  → Checking out '$target' in $dir"
+		if ! git -C "$dir" checkout "$target" > /dev/null 2>&1; then
+			echo "✗ Failed to checkout '$target' in $dir" >&2
+			exit 1
+		fi
+	fi
+
+	git -C "$dir" merge --no-edit "$source"
+
+	if git -C "$dir" rev-parse -q --verify MERGE_HEAD > /dev/null 2>&1; then
+		handle_conflict "$dir" "$source" "$target"
+	fi
+
+	echo "✓ Merged '$source' into '$target' (dir: $dir)"
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--remote|-r)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: --remote requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			remote="$2"
+			shift 2
+			;;
+		--help)
+			usage
+			exit 0
+			;;
+		--*)
+			echo "Error: Unknown option: $1" >&2
+			echo "" >&2
+			usage
+			exit 1
+			;;
+		*)
+			branches+=("$1")
+			shift
+			;;
+	esac
+done
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
+	exit 1
+fi
+
+if [[ -z "$remote" ]]; then
+	echo "Error: --remote is required" >&2
+	echo "" >&2
+	usage
+	exit 1
+fi
+
+if ! git remote get-url "$remote" > /dev/null 2>&1; then
+	echo "Error: Remote '$remote' does not exist" >&2
+	exit 1
+fi
+
+if [[ ${#branches[@]} -eq 0 ]]; then
+	echo "Error: At least one branch is required" >&2
+	echo "" >&2
+	usage
+	exit 1
+fi
+
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ "$current_branch" == "HEAD" ]]; then
+	echo "Error: Detached HEAD -- checkout a branch before running git-merge-forward" >&2
+	exit 1
+fi
+
+# Full ordered chain of every branch touched (current + all args, chain order).
+typeset -a chain
+chain=("$current_branch" "${branches[@]}")
+
+# ---------------------------------------------------------------------------
+# Main flow
+# ---------------------------------------------------------------------------
+build_worktree_map
+
+echo "Fetching '$remote'..."
+if ! git fetch "$remote"; then
+	echo "Error: Failed to fetch from remote '$remote'" >&2
+	exit 1
+fi
+echo ""
+
+echo "Pre-flight: syncing local branches with '$remote'..."
+typeset -a sync_failures
+for b in "${chain[@]}"; do
+	if ! sync_branch_with_remote "$b"; then
+		sync_failures+=("$b")
+	fi
+done
+
+if [[ ${#sync_failures[@]} -gt 0 ]]; then
+	echo "" >&2
+	echo "Error: The following branch(es) could not be synced with '$remote':" >&2
+	for b in "${sync_failures[@]}"; do
+		echo "  - $b" >&2
+	done
+	echo "Resolve manually and re-run." >&2
+	exit 1
+fi
+
+# Rebuild -- sync may have created new local branches.
+build_worktree_map
+
+echo ""
+echo "Starting merge chain: ${chain[@]}"
+
+for (( i = 1; i < ${#chain[@]}; i++ )); do
+	source_branch="${chain[$i]}"
+	target_branch="${chain[$((i + 1))]}"
+	merge_branch "$source_branch" "$target_branch"
+done
+
+echo ""
+echo "Done! Merged forward through: ${branches[@]}"

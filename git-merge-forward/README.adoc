@@ -1,0 +1,118 @@
+= git-merge-forward
+
+A zsh plugin that merges a chain of branches forward across git worktrees, with pre-flight remote syncing and interactive conflict resolution.
+
+== Overview
+
+This plugin automates the common "merge forward" workflow used in projects that maintain multiple long-lived version branches (e.g., merging fixes from 5.8.x into 6.0.x into 6.1.x into main). It is worktree-aware: if any of the branches involved are checked out in separate `git worktree` directories, each git operation runs in the correct directory automatically, and the tool clearly reports which directory is being used at every step.
+
+== Features
+
+* Merges a chain of branches in order: current branch -> branch1 -> branch2 -> ... -> branchN
+* Worktree-aware: resolves the correct directory for every branch via `git worktree list --porcelain`, and always prints which directory each step runs in
+* Pre-flight sync: fetches the remote once and syncs every branch in the chain with `<remote>/<branch>` before any merging starts
+  ** Behind only -> fast-forwarded silently
+  ** Missing locally -> created from the remote
+  ** Ahead of (or diverged from) the remote -> pauses, shows the differing commits, and lets you reset to the remote or resolve it elsewhere and recheck, before continuing
+* Refuses to touch a dirty working tree (no auto-stash) -- you clean it up, then re-run
+* On merge conflict: reports the exact conflicted directory and the exact commands to run, then blocks and waits for you to resolve
+* Resume validation: re-checks that the conflict was actually resolved and committed before continuing to the next hop
+* Force-continue escape hatch and Ctrl+C abort, matching the interactive style of `merge-dependency-upgrades`
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-merge-forward
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+git merge-forward --remote REMOTE BRANCH1 [BRANCH2 ...]
+----
+
+=== Options
+
+* `--remote`, `-r REMOTE` - Remote to sync from before merging (required)
+* `--help` - Display help message
+
+=== Examples
+
+[source,bash]
+----
+# Merge current branch -> 6.0.x -> 6.1.x -> main, syncing against origin first
+git merge-forward --remote origin 6.0.x 6.1.x main
+
+# Using the short flag
+git merge-forward -r upstream release/6.1.x main
+----
+
+== Requirements
+
+* Must be run from within a git repository
+* The specified remote must exist
+* Every worktree/directory touched by the merge chain must have a clean working tree (no auto-stash is performed)
+* Git worktree support (Git 2.5+)
+
+== Example Output
+
+[source,bash]
+----
+$ git merge-forward --remote origin 6.1.x main
+Fetching 'origin'...
+
+Pre-flight: syncing local branches with 'origin'...
+Syncing '6.0.x' with 'origin/6.0.x' (dir: /Users/rwinch/code/spring-security)
+✓ '6.0.x' is up to date with 'origin/6.0.x'
+Syncing '6.1.x' with 'origin/6.1.x' (dir: /Users/rwinch/code/spring-security/../6.1.x)
+✓ '6.1.x' is up to date with 'origin/6.1.x'
+Syncing 'main' with 'origin/main' (dir: /Users/rwinch/code/spring-security/../main)
+✓ 'main' is up to date with 'origin/main'
+
+Starting merge chain: 6.0.x 6.1.x main
+
+Merging '6.0.x' -> '6.1.x' (dir: /Users/rwinch/code/spring-security/../6.1.x)
+
+✗ Merge conflict merging '6.0.x' into '6.1.x'
+
+Resolve conflicts in: /Users/rwinch/code/spring-security/../6.1.x
+Then run:
+  git -C "/Users/rwinch/code/spring-security/../6.1.x" add <conflicted files>   (or: git -C "/Users/rwinch/code/spring-security/../6.1.x" add -A)
+  git -C "/Users/rwinch/code/spring-security/../6.1.x" commit --no-edit
+
+Resolved? [Enter=resume / f=force continue / Ctrl+C=abort]
+[user resolves conflicts, runs 'git add -A' and 'git commit --no-edit' in another terminal]
+[presses Enter]
+✓ Merge conflict resolved
+✓ Merged '6.0.x' into '6.1.x' (dir: /Users/rwinch/code/spring-security/../6.1.x)
+
+Merging '6.1.x' -> 'main' (dir: /Users/rwinch/code/spring-security/../main)
+✓ Merged '6.1.x' into 'main' (dir: /Users/rwinch/code/spring-security/../main)
+
+Done! Merged forward through: 6.1.x main
+----
+
+If a branch is ahead of, or has diverged from, its remote, the pre-flight sync step pauses instead of merging:
+
+[source,bash]
+----
+Syncing '6.0.x' with 'origin/6.0.x' (dir: /Users/rwinch/code/spring-security)
+
+⚠️  '6.0.x' has diverged from 'origin/6.0.x' (1 ahead, 0 behind) (dir: /Users/rwinch/code/spring-security)
+
+Commits only on '6.0.x':
+a1b2c3d a fix that hasn't been pushed yet
+
+[Enter=recheck after resolving elsewhere / r=reset to remote / Ctrl+C=abort]
+----
+
+== Related Plugins
+
+* link:../git-create-worktrees[git-create-worktrees] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
+* link:../merge-dependency-upgrades[merge-dependency-upgrades] - Interactive conflict-resolution pattern this plugin follows
