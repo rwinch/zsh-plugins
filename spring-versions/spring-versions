@@ -252,7 +252,7 @@ print_group() {
 
 	echo "$type_name"
 	{
-		printf 'GENERATION\tBRANCH\tCURRENT VERSION\tOSS SUPPORT END\tCOMMERCIAL SUPPORT END\n'
+		printf 'GENERATION\tBRANCH\tCURRENT VERSION\tOSS EOL\tCOMMERCIAL EOL\n'
 		echo "$generations" | jq -r --arg t "$type_name" '
 			.[] | select(.type == $t) | [.generation, .branch, (.currentVersion // "-"), .ossSupportEnd, .commercialSupportEnd] | @tsv
 		'
