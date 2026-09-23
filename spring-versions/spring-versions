@@ -107,6 +107,7 @@ done
 # Resolve the remote URL to derive the project slug from, if --project wasn't given
 resolve_remote_url() {
 	local tracked remote_name url
+	local spring_remotes ssh_remotes https_remotes r u
 
 	tracked=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)
 	if [[ -n "$tracked" ]]; then
@@ -124,7 +125,24 @@ resolve_remote_url() {
 		return 0
 	fi
 
-	remote_name=$(git remote 2>/dev/null | grep '^spring-' | sort | head -n1)
+	spring_remotes=("${(@f)$(git remote 2>/dev/null | grep '^spring-' | sort)}")
+	ssh_remotes=()
+	https_remotes=()
+	for r in "${spring_remotes[@]}"; do
+		u=$(git remote get-url "$r" 2>/dev/null)
+		case "$u" in
+			git@*) ssh_remotes+=("$r") ;;
+			https://*) https_remotes+=("$r") ;;
+		esac
+	done
+
+	remote_name=""
+	if [[ ${#ssh_remotes[@]} -gt 0 ]]; then
+		remote_name="${ssh_remotes[1]}"
+	elif [[ ${#https_remotes[@]} -gt 0 ]]; then
+		remote_name="${https_remotes[1]}"
+	fi
+
 	if [[ -n "$remote_name" ]]; then
 		url=$(git remote get-url "$remote_name" 2>/dev/null)
 		if [[ -n "$url" ]]; then
