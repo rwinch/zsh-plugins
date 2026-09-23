@@ -1,0 +1,8 @@
+#compdef spring-versions
+
+_arguments -s \
+	'(-p --project)'{-p,--project}'[Spring project slug]:slug:' \
+	'(-t --type)'{-t,--type}'[filter by support type]:type:(oss o commercial c)' \
+	'--json[output as JSON instead of tab-delimited text]' \
+	'(-f --field)'{-f,--field}'[print one field per line]:field:(generation branch currentVersion ossSupportEnd commercialSupportEnd type)' \
+	'(-h --help)'{-h,--help}'[show this help message]'

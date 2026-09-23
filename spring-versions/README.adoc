@@ -15,6 +15,7 @@ Spring project pages (e.g. https://spring.io/projects/spring-security#support) l
 * Tab-delimited text output by default, or JSON with `--json`
 * Optional `--type` filter to show only OSS or only commercial generations
 * Optional `--field` to print just one field's values, one per line
+* Zsh tab completion for all options and their values
 
 == Installation
 
