@@ -14,6 +14,7 @@ Spring project pages (e.g. https://spring.io/projects/spring-security#support) l
 * Defaults the project to the current directory's git remote, but accepts an explicit override
 * Tab-delimited text output by default, or JSON with `--json`
 * Optional `--type` filter to show only OSS or only commercial generations
+* Optional `--field` to print just one field's values, one per line
 
 == Installation
 
@@ -38,6 +39,7 @@ spring-versions [OPTIONS]
 * `-p, --project SLUG` - Spring project slug (e.g. `spring-security`). Default: the final path segment of a remote URL (a trailing `-commercial` is stripped). The remote used is the current branch's tracked remote, falling back to `origin`, then a remote whose name starts with `spring-`.
 * `-t, --type TYPE` - Only show one support type: `oss`/`o` or `commercial`/`c`. Default: show both, grouped.
 * `--json` - Output as JSON instead of the default tab-delimited text.
+* `-f, --field FIELD` - Print one raw value per line for the given field across all matching generations (after any `--type` filter), instead of the normal table/JSON output. `FIELD` is one of: `generation`, `branch`, `currentVersion`, `ossSupportEnd`, `commercialSupportEnd`, `type`. Shortcut for `spring-versions --json | jq -r '.[].FIELD'`.
 * `-h, --help` - Show the help message.
 
 === Examples
@@ -58,6 +60,12 @@ spring-versions --type commercial
 
 # Only OSS-supported generations, as JSON
 spring-versions -t o --json
+
+# Just the branch names, one per line
+spring-versions --field branch
+
+# Just the branch names of OSS-supported generations
+spring-versions -t o -f branch
 ----
 
 == Requirements

@@ -4,6 +4,7 @@
 project=""
 type_filter=""
 json_output=false
+field=""
 
 usage() {
 	cat <<EOF
@@ -23,6 +24,11 @@ OPTIONS:
   -t, --type TYPE        Only show one support type: "oss"/"o" or "commercial"/"c".
                          Default: show both, grouped.
   --json                 Output as JSON instead of the default tab-delimited text.
+  -f, --field FIELD      Print one raw value per line for the given field across all
+                         matching generations (after any --type filter), instead of
+                         the normal table/JSON output. FIELD is one of: generation,
+                         branch, currentVersion, ossSupportEnd, commercialSupportEnd,
+                         type. Shortcut for: spring-versions --json | jq -r '.[].FIELD'
   -h, --help             Show this help message.
 
 BEHAVIOR:
@@ -38,6 +44,8 @@ EXAMPLES:
   spring-versions --json
   spring-versions --type commercial
   spring-versions -t o --json
+  spring-versions --field branch
+  spring-versions -t o -f branch
 
 REQUIREMENTS:
   curl, jq, git
@@ -84,6 +92,26 @@ while [[ $# -gt 0 ]]; do
 		--json)
 			json_output=true
 			shift
+			;;
+		-f|--field)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: $1 requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			case "$2" in
+				generation|branch|currentVersion|ossSupportEnd|commercialSupportEnd|type)
+					field="$2"
+					;;
+				*)
+					echo "Error: --field must be one of: generation, branch, currentVersion, ossSupportEnd, commercialSupportEnd, type" >&2
+					echo "" >&2
+					usage
+					exit 1
+					;;
+			esac
+			shift 2
 			;;
 		-h|--help)
 			usage
@@ -203,6 +231,11 @@ generations=$(echo "$response" | jq --arg today "$today" '
 
 if [[ -n "$type_filter" ]]; then
 	generations=$(echo "$generations" | jq --arg t "$type_filter" '[.[] | select(.type == $t)]')
+fi
+
+if [[ -n "$field" ]]; then
+	echo "$generations" | jq -r --arg f "$field" '.[][$f]'
+	exit 0
 fi
 
 if [[ "$json_output" == true ]]; then
