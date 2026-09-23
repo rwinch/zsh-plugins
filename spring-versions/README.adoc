@@ -74,6 +74,7 @@ spring-versions -t o -f branch
 * `curl`
 * `jq`
 * `git`
+* `column` (part of `util-linux`/BSD base tools; present by default on macOS and most Linux distros)
 
 == Example Output
 
@@ -82,15 +83,15 @@ spring-versions -t o -f branch
 $ cd ~/code/spring-projects/spring-security
 $ spring-versions
 OSS
-GENERATION	BRANCH	CURRENT VERSION	OSS SUPPORT END	COMMERCIAL SUPPORT END
-7.0.x	7.0.x	7.0.6	2026-12-31	2027-12-31
-7.1.x	7.1.x	7.1.0	2027-07-31	2028-07-31
-7.2.x	main	-	2027-12-31	2028-12-31
+GENERATION  BRANCH  CURRENT VERSION  OSS SUPPORT END  COMMERCIAL SUPPORT END
+7.0.x       7.0.x   7.0.6            2026-12-31       2027-12-31
+7.1.x       7.1.x   7.1.0            2027-07-31       2028-07-31
+7.2.x       main    -                2027-12-31       2028-12-31
 
 COMMERCIAL
-GENERATION	BRANCH	CURRENT VERSION	OSS SUPPORT END	COMMERCIAL SUPPORT END
-6.4.x	6.4.x	6.4.13	2025-12-31	2026-12-31
-6.5.x	6.5.x	6.5.11	2026-06-30	2032-06-30
+GENERATION  BRANCH  CURRENT VERSION  OSS SUPPORT END  COMMERCIAL SUPPORT END
+6.4.x       6.4.x   6.4.13           2025-12-31       2026-12-31
+6.5.x       6.5.x   6.5.11           2026-06-30       2032-06-30
 
 $ spring-versions --json
 [

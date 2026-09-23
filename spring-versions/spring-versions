@@ -251,10 +251,12 @@ print_group() {
 	fi
 
 	echo "$type_name"
-	printf 'GENERATION\tBRANCH\tCURRENT VERSION\tOSS SUPPORT END\tCOMMERCIAL SUPPORT END\n'
-	echo "$generations" | jq -r --arg t "$type_name" '
-		.[] | select(.type == $t) | [.generation, .branch, (.currentVersion // "-"), .ossSupportEnd, .commercialSupportEnd] | @tsv
-	'
+	{
+		printf 'GENERATION\tBRANCH\tCURRENT VERSION\tOSS SUPPORT END\tCOMMERCIAL SUPPORT END\n'
+		echo "$generations" | jq -r --arg t "$type_name" '
+			.[] | select(.type == $t) | [.generation, .branch, (.currentVersion // "-"), .ossSupportEnd, .commercialSupportEnd] | @tsv
+		'
+	} | column -t -s $'\t'
 }
 
 print_group "OSS"
