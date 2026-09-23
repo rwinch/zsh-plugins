@@ -1,0 +1,213 @@
+#!/bin/zsh
+
+# Default values
+project=""
+type_filter=""
+json_output=false
+
+usage() {
+	cat <<EOF
+Usage: spring-versions [OPTIONS]
+
+Show currently supported OSS and commercial versions for a Spring project, grouped by
+support type.
+
+OPTIONS:
+  -p, --project SLUG    Spring project slug (e.g. spring-security). Default: the
+                         final path segment of a remote URL (e.g. a remote of
+                         github.com/spring-projects/spring-security defaults the
+                         project to "spring-security"), a trailing "-commercial" is
+                         stripped. The remote used is the current branch's tracked
+                         remote, falling back to "origin", then a remote whose name
+                         starts with "spring-".
+  -t, --type TYPE        Only show one support type: "oss"/"o" or "commercial"/"c".
+                         Default: show both, grouped.
+  --json                 Output as JSON instead of the default tab-delimited text.
+  -h, --help             Show this help message.
+
+BEHAVIOR:
+  - Generations whose commercial support has already ended are never shown.
+  - A generation is OSS while its OSS support window is still open; once that window
+    has closed but commercial support is still active, it's shown as COMMERCIAL.
+  - BRANCH is the generation name (e.g. "6.4.x"), except the newest OSS generation,
+    which is "main".
+
+EXAMPLES:
+  spring-versions
+  spring-versions --project spring-boot
+  spring-versions --json
+  spring-versions --type commercial
+  spring-versions -t o --json
+
+REQUIREMENTS:
+  curl, jq, git
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-p|--project)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: $1 requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			project="$2"
+			shift 2
+			;;
+		-t|--type)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: $1 requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			case "${2:l}" in
+				oss|o)
+					type_filter="OSS"
+					;;
+				commercial|c)
+					type_filter="COMMERCIAL"
+					;;
+				*)
+					echo "Error: --type must be one of: oss, o, commercial, c" >&2
+					echo "" >&2
+					usage
+					exit 1
+					;;
+			esac
+			shift 2
+			;;
+		--json)
+			json_output=true
+			shift
+			;;
+		-h|--help)
+			usage
+			exit 0
+			;;
+		--*)
+			echo "Error: Unknown option: $1" >&2
+			echo "" >&2
+			usage
+			exit 1
+			;;
+		*)
+			echo "Error: Unexpected argument: $1" >&2
+			echo "" >&2
+			usage
+			exit 1
+			;;
+	esac
+done
+
+# Resolve the remote URL to derive the project slug from, if --project wasn't given
+resolve_remote_url() {
+	local tracked remote_name url
+
+	tracked=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)
+	if [[ -n "$tracked" ]]; then
+		remote_name="${tracked%%/*}"
+		url=$(git remote get-url "$remote_name" 2>/dev/null)
+		if [[ -n "$url" ]]; then
+			echo "$url"
+			return 0
+		fi
+	fi
+
+	url=$(git remote get-url origin 2>/dev/null)
+	if [[ -n "$url" ]]; then
+		echo "$url"
+		return 0
+	fi
+
+	remote_name=$(git remote 2>/dev/null | grep '^spring-' | sort | head -n1)
+	if [[ -n "$remote_name" ]]; then
+		url=$(git remote get-url "$remote_name" 2>/dev/null)
+		if [[ -n "$url" ]]; then
+			echo "$url"
+			return 0
+		fi
+	fi
+
+	return 1
+}
+
+if [[ -z "$project" ]]; then
+	remote_url=$(resolve_remote_url)
+	if [[ -z "$remote_url" ]]; then
+		echo "Error: could not determine the Spring project. No tracked remote, 'origin', or 'spring-*' remote was found." >&2
+		echo "Specify the project explicitly with --project." >&2
+		echo "" >&2
+		usage
+		exit 1
+	fi
+
+	repo_name="${remote_url##*/}"
+	repo_name="${repo_name%.git}"
+	project="${repo_name%-commercial}"
+fi
+
+# Fetch generation/support data
+response=$(curl -sf "https://api.spring.io/projects/${project}/generations")
+if [[ $? -ne 0 || -z "$response" ]]; then
+	echo "Error: could not fetch support data for project '$project'" >&2
+	exit 1
+fi
+
+today=$(date +%Y-%m-%d)
+
+generations=$(echo "$response" | jq --arg today "$today" '
+	def with_branch:
+		(length - 1) as $lastIdx
+		| to_entries
+		| map(
+				.value as $g
+				| $g + { branch: (if (.key == $lastIdx and $g.type == "OSS") then "main" else $g.generation end) }
+			);
+	[
+		.["_embedded"].generations[]
+		| {
+				generation: .name,
+				ossSupportEnd: .ossSupportEndDate,
+				commercialSupportEnd: .commercialSupportEndDate,
+				currentVersion: (.latestPatch.oss // .latestPatch.enterprise // null)
+			}
+		| select(.commercialSupportEnd != null and .commercialSupportEnd >= $today)
+		| . + { type: (if (.ossSupportEnd != null and .ossSupportEnd >= $today) then "OSS" else "COMMERCIAL" end) }
+	]
+	| with_branch
+	| map({type, generation, branch, currentVersion, ossSupportEnd, commercialSupportEnd})
+')
+
+if [[ -n "$type_filter" ]]; then
+	generations=$(echo "$generations" | jq --arg t "$type_filter" '[.[] | select(.type == $t)]')
+fi
+
+if [[ "$json_output" == true ]]; then
+	echo "$generations" | jq '.'
+	exit 0
+fi
+
+print_group() {
+	local type_name="$1"
+
+	if [[ -n "$type_filter" && "$type_filter" != "$type_name" ]]; then
+		return
+	fi
+
+	echo "$type_name"
+	printf 'GENERATION\tBRANCH\tCURRENT VERSION\tOSS SUPPORT END\tCOMMERCIAL SUPPORT END\n'
+	echo "$generations" | jq -r --arg t "$type_name" '
+		.[] | select(.type == $t) | [.generation, .branch, (.currentVersion // "-"), .ossSupportEnd, .commercialSupportEnd] | @tsv
+	'
+}
+
+print_group "OSS"
+if [[ -z "$type_filter" ]]; then
+	echo ""
+fi
+print_group "COMMERCIAL"
