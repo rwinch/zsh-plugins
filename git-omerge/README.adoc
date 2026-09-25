@@ -1,4 +1,4 @@
-= git-merge-ours
+= git-omerge
 
 A zsh plugin that forward-merges a branch using git's `ours` merge strategy, with a commit message that clearly records what happened.
 
@@ -7,6 +7,10 @@ A zsh plugin that forward-merges a branch using git's `ours` merge strategy, wit
 Sometimes a forward-merge from an older branch needs to be recorded in history without actually pulling in that branch's changes (e.g. the fix was already re-applied directly on the target branch). `git merge -s ours BRANCH` does this: it creates a merge commit with two parents, but keeps the current branch's tree exactly as-is, discarding BRANCH's changes.
 
 Because a plain `-s ours` merge produces the same generic `Merge branch 'BRANCH'` message as any other merge, it's easy to lose track of which merges intentionally discarded changes this way. This plugin fixes that by prefilling a distinct commit message that's easy to spot in `git log`.
+
+=== Why `git omerge` and not `git merge-ours`?
+
+Git reserves `merge-ours` (along with `merge-resolve`, `merge-recursive`, `merge-octopus`, `merge-subtree`, `merge-one-file`) as an internal plumbing helper used by its merge-strategy machinery. That helper lives in git's exec-path, which git searches _before_ `$PATH`, so a `git-merge-ours` script placed on `$PATH` would never actually run: `git merge-ours BRANCH` would silently invoke git's internal helper instead and do nothing (confirmed via `GIT_TRACE=1`, which reports it as a git built-in). `omerge` ("ours merge") avoids the collision entirely.
 
 == Features
 
@@ -20,7 +24,7 @@ Can be installed using antigen:
 
 [source,bash]
 ----
-antigen bundle rwinch/zsh-plugins git-merge-ours
+antigen bundle rwinch/zsh-plugins git-omerge
 ----
 
 Or manually by adding the plugin directory to your `PATH`.
@@ -29,7 +33,7 @@ Or manually by adding the plugin directory to your `PATH`.
 
 [source,bash]
 ----
-git merge-ours BRANCH
+git omerge BRANCH
 ----
 
 === Options
@@ -41,7 +45,7 @@ git merge-ours BRANCH
 [source,bash]
 ----
 # On branch 6.0.x, forward-merge 5.8.x without taking its changes
-git merge-ours 5.8.x
+git omerge 5.8.x
 ----
 
 == Requirements
@@ -53,7 +57,7 @@ git merge-ours 5.8.x
 [source,bash]
 ----
 $ git checkout 6.0.x
-$ git merge-ours 5.8.x
+$ git omerge 5.8.x
 ----
 
 Opens `$EDITOR` prefilled with:
@@ -67,4 +71,4 @@ After saving, `git log -1` shows that message, and the working tree/history for 
 
 == Related Plugins
 
-* link:../git-merge-forward[git-merge-forward] - Merges a chain of branches forward normally (taking changes); use `git-merge-ours` instead for a hop where the changes should be recorded as merged but not actually applied
+* link:../git-merge-forward[git-merge-forward] - Merges a chain of branches forward normally (taking changes); use `git-omerge` instead for a hop where the changes should be recorded as merged but not actually applied

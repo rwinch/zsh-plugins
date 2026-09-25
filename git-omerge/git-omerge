@@ -1,9 +1,17 @@
 #!/bin/zsh
 
+# Named 'omerge' ("ours merge"), not 'git-merge-ours': git reserves
+# 'merge-ours' (along with merge-resolve, merge-recursive, merge-octopus,
+# merge-subtree, merge-one-file) as an internal plumbing helper for its
+# merge-strategy machinery. It lives in git's exec-path, which is searched
+# before $PATH, so a 'git-merge-ours' script on $PATH would never run --
+# 'git merge-ours BRANCH' would silently invoke git's internal helper
+# instead (confirmed via GIT_TRACE=1, which reports it as a git built-in).
+
 # Usage function
 usage() {
 	cat <<EOF
-Usage: git-merge-ours BRANCH
+Usage: git-omerge BRANCH
 
 Forward-merge BRANCH into the current branch using the 'ours' merge
 strategy (keeps the current branch's tree unchanged, discarding BRANCH's
@@ -23,7 +31,7 @@ BEHAVIOR:
     where TARGET is the current branch being merged into.
 
 EXAMPLES:
-  git-merge-ours 5.8.x
+  git-omerge 5.8.x
 
 REQUIREMENTS:
   - Must be run from within a git repository
