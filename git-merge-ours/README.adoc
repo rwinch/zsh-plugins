@@ -1,0 +1,70 @@
+= git-merge-ours
+
+A zsh plugin that forward-merges a branch using git's `ours` merge strategy, with a commit message that clearly records what happened.
+
+== Overview
+
+Sometimes a forward-merge from an older branch needs to be recorded in history without actually pulling in that branch's changes (e.g. the fix was already re-applied directly on the target branch). `git merge -s ours BRANCH` does this: it creates a merge commit with two parents, but keeps the current branch's tree exactly as-is, discarding BRANCH's changes.
+
+Because a plain `-s ours` merge produces the same generic `Merge branch 'BRANCH'` message as any other merge, it's easy to lose track of which merges intentionally discarded changes this way. This plugin fixes that by prefilling a distinct commit message that's easy to spot in `git log`.
+
+== Features
+
+* Runs `git merge -s ours BRANCH` against the current branch
+* Prefills a `merge(ours): BRANCH into TARGET` commit message, so these merges are easy to spot in `git log` (unlike git's default message, `TARGET` is always included, not just when the current branch isn't git's "default" branch)
+* Opens `$EDITOR` (`-e`) so the message can be reviewed or edited before the merge commit is created
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-merge-ours
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+git merge-ours BRANCH
+----
+
+=== Options
+
+* `--help`, `-h` - Display this help message
+
+=== Examples
+
+[source,bash]
+----
+# On branch 6.0.x, forward-merge 5.8.x without taking its changes
+git merge-ours 5.8.x
+----
+
+== Requirements
+
+* Must be run from within a git repository
+
+== Example Output
+
+[source,bash]
+----
+$ git checkout 6.0.x
+$ git merge-ours 5.8.x
+----
+
+Opens `$EDITOR` prefilled with:
+
+[source]
+----
+merge(ours): 5.8.x into 6.0.x
+----
+
+After saving, `git log -1` shows that message, and the working tree/history for `6.0.x` is unchanged aside from the new merge commit.
+
+== Related Plugins
+
+* link:../git-merge-forward[git-merge-forward] - Merges a chain of branches forward normally (taking changes); use `git-merge-ours` instead for a hop where the changes should be recorded as merged but not actually applied
