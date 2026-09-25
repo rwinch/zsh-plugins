@@ -1,4 +1,4 @@
-= git-omerge
+= gmo
 
 A zsh plugin that forward-merges a branch using git's `ours` merge strategy, with a commit message that clearly records what happened.
 
@@ -8,9 +8,9 @@ Sometimes a forward-merge from an older branch needs to be recorded in history w
 
 Because a plain `-s ours` merge produces the same generic `Merge branch 'BRANCH'` message as any other merge, it's easy to lose track of which merges intentionally discarded changes this way. This plugin fixes that by prefilling a distinct commit message that's easy to spot in `git log`.
 
-=== Why `git omerge` and not `git merge-ours`?
+=== Why `gmo` and not `git merge-ours` or `git omerge`?
 
-Git reserves `merge-ours` (along with `merge-resolve`, `merge-recursive`, `merge-octopus`, `merge-subtree`, `merge-one-file`) as an internal plumbing helper used by its merge-strategy machinery. That helper lives in git's exec-path, which git searches _before_ `$PATH`, so a `git-merge-ours` script placed on `$PATH` would never actually run: `git merge-ours BRANCH` would silently invoke git's internal helper instead and do nothing (confirmed via `GIT_TRACE=1`, which reports it as a git built-in). `omerge` ("ours merge") avoids the collision entirely.
+`gmo` ("git merge ours") is a bare command, not a `git <subcommand>`, matching the oh-my-zsh git plugin's short-alias convention (`gm`, `gma`, `gmc`, `gmom`, `gmum`, ...) rather than git's own subcommand style. This also sidesteps a real collision: git reserves `merge-ours` (along with `merge-resolve`, `merge-recursive`, `merge-octopus`, `merge-subtree`, `merge-one-file`) as an internal plumbing helper used by its merge-strategy machinery. That helper lives in git's exec-path, which git searches _before_ `$PATH`, so a `git-merge-ours` script placed on `$PATH` would never actually run: `git merge-ours BRANCH` would silently invoke git's internal helper instead and do nothing (confirmed via `GIT_TRACE=1`, which reports it as a git built-in).
 
 == Features
 
@@ -24,7 +24,7 @@ Can be installed using antigen:
 
 [source,bash]
 ----
-antigen bundle rwinch/zsh-plugins git-omerge
+antigen bundle rwinch/zsh-plugins gmo
 ----
 
 Or manually by adding the plugin directory to your `PATH`.
@@ -33,7 +33,7 @@ Or manually by adding the plugin directory to your `PATH`.
 
 [source,bash]
 ----
-git omerge BRANCH
+gmo BRANCH
 ----
 
 === Options
@@ -45,7 +45,7 @@ git omerge BRANCH
 [source,bash]
 ----
 # On branch 6.0.x, forward-merge 5.8.x without taking its changes
-git omerge 5.8.x
+gmo 5.8.x
 ----
 
 == Requirements
@@ -57,7 +57,7 @@ git omerge 5.8.x
 [source,bash]
 ----
 $ git checkout 6.0.x
-$ git omerge 5.8.x
+$ gmo 5.8.x
 ----
 
 Opens `$EDITOR` prefilled with:
@@ -71,4 +71,4 @@ After saving, `git log -1` shows that message, and the working tree/history for 
 
 == Related Plugins
 
-* link:../git-merge-forward[git-merge-forward] - Merges a chain of branches forward normally (taking changes); use `git-omerge` instead for a hop where the changes should be recorded as merged but not actually applied
+* link:../git-merge-forward[git-merge-forward] - Merges a chain of branches forward normally (taking changes); use `gmo` instead for a hop where the changes should be recorded as merged but not actually applied
