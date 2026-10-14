@@ -19,6 +19,7 @@ BEHAVIOR:
   - Iterates over all branches on the specified remote
   - Processes branches that match the pattern \d+\.\d+.x (e.g., 5.8.x, 6.0.x)
   - Also processes branches that match disclosure/*/*.x (e.g., disclosure/CVE-2025-1234/5.8.x)
+  - Also processes branches that match release/* (e.g., release/1.0)
   - Also processes branches named 'main' and 'docs-build'
   - For each matching branch:
     * If worktree at ../{branch} exists, skips with a message
@@ -133,7 +134,7 @@ remote_branches=$(git branch -r | grep "^  $remote/" | sed "s|^  $remote/||" | g
 # Process each branch
 for branch in ${(f)remote_branches}; do
 	# Check if branch matches version pattern (e.g., 5.8.x, 6.0.x) or is main/docs-build
-	if [[ "$branch" =~ ^[0-9]+\.[0-9]+\.x$ ]] || [[ "$branch" =~ ^disclosure/[^/]+/[^/]+\.x$ ]] || [[ "$branch" == "main" ]] || [[ "$branch" == "docs-build" ]]; then
+	if [[ "$branch" =~ ^[0-9]+\.[0-9]+\.x$ ]] || [[ "$branch" =~ ^disclosure/[^/]+/[^/]+\.x$ ]] || [[ "$branch" =~ ^release/[^/]+$ ]] || [[ "$branch" == "main" ]] || [[ "$branch" == "docs-build" ]]; then
 		worktree_path="../${branch}"
 		
 		# Check if worktree already exists

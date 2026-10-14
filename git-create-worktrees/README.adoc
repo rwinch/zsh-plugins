@@ -10,6 +10,7 @@ This plugin provides a command to automatically create git worktrees for all mat
 
 * Automatically detects and processes version branches matching the pattern `\d+\.\d+.x` (e.g., 5.8.x, 6.0.x)
 * Also processes disclosure branches matching `disclosure/*/*.x` (e.g., `disclosure/CVE-2025-1234/5.8.x`)
+* Also processes release branches matching `release/*` (e.g., `release/1.0`)
 * Also processes `main` and `docs-build` branches
 * Creates worktrees in the parent directory (`../branch-name`)
 * Automatically creates local tracking branches if they don't exist
@@ -62,7 +63,7 @@ The command performs the following steps:
 2. Determines the remote to use (defaults to repository owner from directory structure)
 3. Fetches the latest changes from the remote
 4. Iterates through all remote branches
-5. For each branch matching `\d+\.\d+.x`, `disclosure/*/*.x`, `main`, or `docs-build`:
+5. For each branch matching `\d+\.\d+.x`, `disclosure/*/*.x`, `release/*`, `main`, or `docs-build`:
    * Checks if a worktree already exists at `../branch-name`
    * If not:
    ** Creates a local tracking branch if it doesn't exist
