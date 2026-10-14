@@ -1,0 +1,24 @@
+Adds `git-switch-worktree` (alias `gsw`), which behaves like `git switch` but `cd`s into the branch's worktree.
+
+* If a worktree for the branch exists, `cd` into it.
+* If the branch exists locally or on a single remote, create a worktree at `../<branch>` and `cd` into it.
+* With `-c <new-branch> [start-point]` (or `-C` to reset), create the branch and a worktree for it.
+
+Worktrees are siblings of the current worktree, matching the layout of `git-create-worktrees`.
+
+This is a shell function rather than a script on `PATH` because a child process cannot change the directory of your shell.
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-switch-worktree
+----
+
+Usage:
+
+[source,bash]
+----
+git-switch-worktree 6.0.x
+git-switch-worktree -c gh-123 main
+----
