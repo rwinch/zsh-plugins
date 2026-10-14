@@ -1,10 +1,10 @@
-# git-switch-worktree is a function (not a script on PATH) because it needs to
+# git-worktree-switch is a function (not a script on PATH) because it needs to
 # cd the calling shell into the worktree.
 
-_git_switch_worktree_usage() {
+_git_worktree_switch_usage() {
 	cat <<USAGE
-Usage: git-switch-worktree <branch>
-       git-switch-worktree (-c|-C) <new-branch> [<start-point>]
+Usage: git-worktree-switch <branch>
+       git-worktree-switch (-c|-C) <new-branch> [<start-point>]
 
 Like 'git switch', but cd's into the worktree for the branch.
 
@@ -20,7 +20,7 @@ Worktrees are siblings of the current worktree (same layout as git-create-worktr
 USAGE
 }
 
-git-switch-worktree() {
+git-worktree-switch() {
 	local create="" branch="" start=""
 
 	while [[ $# -gt 0 ]]; do
@@ -33,12 +33,12 @@ git-switch-worktree() {
 				create="$1"; branch="$2"; shift 2
 				;;
 			-h|--help)
-				_git_switch_worktree_usage
+				_git_worktree_switch_usage
 				return 0
 				;;
 			-*)
 				echo "fatal: unknown option: $1" >&2
-				_git_switch_worktree_usage >&2
+				_git_worktree_switch_usage >&2
 				return 1
 				;;
 			*)
@@ -56,7 +56,7 @@ git-switch-worktree() {
 	done
 
 	if [[ -z "$branch" ]]; then
-		_git_switch_worktree_usage >&2
+		_git_worktree_switch_usage >&2
 		return 1
 	fi
 
@@ -136,4 +136,4 @@ git-switch-worktree() {
 	echo "Switched to worktree $PWD (branch $branch)"
 }
 
-alias gswt=git-switch-worktree
+alias gws=git-worktree-switch
