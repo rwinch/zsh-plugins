@@ -136,4 +136,4 @@ git-switch-worktree() {
 	echo "Switched to worktree $PWD (branch $branch)"
 }
 
-alias gsw=git-switch-worktree
+alias gswt=git-switch-worktree
