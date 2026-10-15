@@ -153,6 +153,7 @@ t "disclosures and releases" '
 	git -C $W push -q commercial disclosure/frozen/7.0.x
 	run -R -r 7.0.1; expect_rc 1
 	expect_out "commercial/release/7.0.1 contains commercial/disclosure/frozen/7.0.x +NOT MERGED, 1 commit"
+	expect_out "git log --oneline commercial/release/7.0.1..commercial/disclosure/frozen/7.0.x"
 '
 
 t "problems are reported together (missing branch, missing upstream, missing release)" '

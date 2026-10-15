@@ -307,10 +307,10 @@ ref_of() {
 	[[ "$1" == local ]] && echo "refs/heads/$2" || echo "refs/remotes/${up_remote[$2]}/${up_branch[$2]}"
 }
 
-# report_pair SCOPE NAME-A NAME-B REF-A REF-B WIDTH-A WIDTH-B PREFIX ARROW
-# merged when REF-A is contained in REF-B.
+# report_pair SCOPE NAME-A NAME-B REF-A REF-B WIDTH-A WIDTH-B PREFIX ARROW HINT-RANGE
+# merged when REF-A is contained in REF-B. HINT-RANGE is the NAME form of REF-B..REF-A.
 report_pair() {
-	local label="$1" na="$2" nb="$3" ra="$4" rb="$5" wa="$6" wb="$7" prefix="$8" arrow="$9"
+	local label="$1" na="$2" nb="$3" ra="$4" rb="$5" wa="$6" wb="$7" prefix="$8" arrow="$9" range="${10}"
 	local count line
 	local -a lines
 	(( checks_total++ ))
@@ -320,7 +320,7 @@ report_pair() {
 		(( checks_bad++ ))
 		count=$(git rev-list --count "$rb..$ra")
 		printf '  %s %-*s %s %-*s  NOT MERGED, %d commit(s)\n' "$prefix" "$wa" "$na" "$arrow" "$wb" "$nb" "$count"
-		echo "        git log --oneline $nb..$na"
+		echo "        git log --oneline $range"
 		lines=("${(@f)$(git log --oneline -5 "$rb..$ra")}")
 		for line in "${lines[@]}"; do echo "        $line"; done
 		(( count > 5 )) && echo "        ..."
@@ -341,7 +341,7 @@ check_scope() {
 	done
 	for (( i = 1; i <= ${#hop_source[@]}; i++ )); do
 		s="${hop_source[$i]}"; t="${hop_target[$i]}"
-		report_pair "$scope" "$(name_of $scope $s)" "$(name_of $scope $t)" "$(ref_of $scope $s)" "$(ref_of $scope $t)" "$wa" "$wb" "($i)" "->"
+		report_pair "$scope" "$(name_of $scope $s)" "$(name_of $scope $t)" "$(ref_of $scope $s)" "$(ref_of $scope $t)" "$wa" "$wb" "($i)" "->" "$(name_of $scope $t)..$(name_of $scope $s)"
 	done
 
 	if (( ${#rel_version[@]} > 0 )); then
@@ -350,10 +350,10 @@ check_scope() {
 			base="${rel_base[$i]}"
 			rb="release/${rel_version[$i]}"
 			if [[ "$scope" == local ]]; then
-				report_pair "$scope" "$rb" "$base" "refs/heads/$base" "refs/heads/$rb" 0 0 "" "contains"
+				report_pair "$scope" "$rb" "$base" "refs/heads/$base" "refs/heads/$rb" 0 0 "" "contains" "$rb..$base"
 			else
 				rr="${up_remote[$base]}"
-				report_pair "$scope" "$rr/$rb" "$rr/${up_branch[$base]}" "refs/remotes/$rr/${up_branch[$base]}" "refs/remotes/$rr/$rb" 0 0 "" "contains"
+				report_pair "$scope" "$rr/$rb" "$rr/${up_branch[$base]}" "refs/remotes/$rr/${up_branch[$base]}" "refs/remotes/$rr/$rb" 0 0 "" "contains" "$rr/$rb..$rr/${up_branch[$base]}"
 			fi
 		done
 	fi
