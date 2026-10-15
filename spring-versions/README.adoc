@@ -15,6 +15,7 @@ Spring project pages (e.g. https://spring.io/projects/spring-security#support) l
 * Tab-delimited text output by default, or JSON with `--json`
 * Optional `--type` filter to show only OSS or only commercial generations
 * Optional `--field` to print just one field's values, one per line
+* Optional `--line` to join the `--field` values with spaces on one line, and the `svaob` alias for the OSS branches
 * Zsh tab completion for all options and their values
 
 == Installation
@@ -41,6 +42,7 @@ spring-versions [OPTIONS]
 * `-t, --type TYPE` - Only show one support type: `oss`/`o` or `commercial`/`c`. Default: show both, grouped.
 * `--json` - Output as JSON instead of the default tab-delimited text.
 * `-f, --field FIELD` - Print one raw value per line for the given field across all matching generations (after any `--type` filter), instead of the normal table/JSON output. `FIELD` is one of: `generation`, `branch`, `currentVersion`, `ossSupportEnd`, `commercialSupportEnd`, `type`. Shortcut for `spring-versions --json | jq -r '.[].FIELD'`.
+* `-l, --line` - With `--field`, join the values with single spaces on one line instead of one per line. An error without `--field`.
 * `-h, --help` - Show the help message.
 
 === Examples
@@ -67,6 +69,20 @@ spring-versions --field branch
 
 # Just the branch names of OSS-supported generations
 spring-versions -t o -f branch
+
+# The same, on one line
+spring-versions -t o -f branch --line
+----
+
+=== Alias
+
+The plugin defines `svaob` (spring versions active OSS branches) for `spring-versions --type oss --field branch --line`. It prints the OSS branches (the newest is `main`) on one line, ready to pass as the branches to the link:../git-branches[git-branches] commands:
+
+[source,bash]
+----
+$ svaob
+7.0.x 7.1.x main
+$ gbbf $(svaob)
 ----
 
 == Requirements

@@ -51,6 +51,7 @@ EXAMPLES:
   git-branches-pull 7.0.x main
   git-branches-pull --dry-run --disclosures 7.0.x 7.1.x main
   git-branches-pull -d 7.0.x main -r 7.0.1.1
+  git-branches-pull \$(svaob) --releases \$(ghmr)   # OSS branches, this month's releases
 
 REQUIREMENTS:
   - Must be run from within a git repository

@@ -76,6 +76,7 @@ EXAMPLES:
   git-branches-merge-forward --allow-ahead 7.0.x main        # resume after an abort
   git-branches-merge-forward --disclosures 7.0.x main
   git-branches-merge-forward -n -d 7.0.x main
+  git-branches-merge-forward \$(svaob)   # svaob (spring-versions): the OSS branches on one line
 
 DEPENDENCY UPDATES:
   If 7.0.x, 7.1.x and main each carry their own unpushed dependency updates

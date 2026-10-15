@@ -5,6 +5,7 @@ project=""
 type_filter=""
 json_output=false
 field=""
+line_output=false
 
 usage() {
 	cat <<EOF
@@ -29,6 +30,8 @@ OPTIONS:
                          the normal table/JSON output. FIELD is one of: generation,
                          branch, currentVersion, ossSupportEnd, commercialSupportEnd,
                          type. Shortcut for: spring-versions --json | jq -r '.[].FIELD'
+  -l, --line             With --field, join the values with single spaces on one line
+                         instead of one per line, e.g. for: git-branches-fetch \$(svaob)
   -h, --help             Show this help message.
 
 BEHAVIOR:
@@ -46,6 +49,7 @@ EXAMPLES:
   spring-versions -t o --json
   spring-versions --field branch
   spring-versions -t o -f branch
+  spring-versions -t o -f branch --line
 
 REQUIREMENTS:
   curl, jq, git
@@ -113,6 +117,10 @@ while [[ $# -gt 0 ]]; do
 			esac
 			shift 2
 			;;
+		-l|--line)
+			line_output=true
+			shift
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -131,6 +139,13 @@ while [[ $# -gt 0 ]]; do
 			;;
 	esac
 done
+
+if [[ "$line_output" == true && -z "$field" ]]; then
+	echo "Error: --line requires --field" >&2
+	echo "" >&2
+	usage
+	exit 1
+fi
 
 # Resolve the remote URL to derive the project slug from, if --project wasn't given
 resolve_remote_url() {
@@ -234,7 +249,11 @@ if [[ -n "$type_filter" ]]; then
 fi
 
 if [[ -n "$field" ]]; then
-	echo "$generations" | jq -r --arg f "$field" '.[][$f]'
+	if [[ "$line_output" == true ]]; then
+		echo "$generations" | jq -r --arg f "$field" '[.[][$f] // empty | tostring] | join(" ")'
+	else
+		echo "$generations" | jq -r --arg f "$field" '.[][$f]'
+	fi
 	exit 0
 fi
 

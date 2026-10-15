@@ -62,6 +62,7 @@ EXAMPLES:
   git-branches-check-merged 7.0.x 7.1.x main
   git-branches-check-merged --remote --disclosures 7.0.x main
   git-branches-check-merged -l -R -d 7.0.x main -r 7.0.1.1
+  git-branches-check-merged \$(svaob) --releases \$(ghmr)   # OSS branches, this month's releases
 
 REQUIREMENTS:
   - Must be run from within a git repository

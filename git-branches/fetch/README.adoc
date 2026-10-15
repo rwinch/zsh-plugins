@@ -21,6 +21,13 @@ antigen bundle rwinch/zsh-plugins git-branches/fetch
 
 The plugin also defines the alias `gbbf` for `git-branches-fetch`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
+To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line) and the `ghmr` alias of link:../../gh-milestones[gh-milestones] (this month's milestones as a comma separated list for `--releases`):
+
+[source,bash]
+----
+gbbf $(svaob) --releases $(ghmr)
+----
+
 == Usage
 
 [source,bash]
