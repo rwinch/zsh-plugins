@@ -10,6 +10,7 @@ oneline=0       # --oneline
 oss_only=0      # --oss-only
 commercial_only=0 # --commercial-only
 hotfixes=0      # --hotfixes
+quiet=0         # --quiet
 state=open      # --state
 state_given=0
 oss_repo_arg=""        # --oss-repo
@@ -60,6 +61,8 @@ OPTIONS:
                                 not affected (combine with --commercial-only to drop them)
   --oneline                     list only: print the unique titles separated by commas
                                 on one line, for --releases (e.g. 7.0.1,7.1.0-M1)
+  --quiet, -q                   list only: do not print the repositories or the 'No milestones
+                                matched' message to stderr (errors are still printed)
   --dry-run, -n                 create/set-due-date: validate and print the gh
                                 commands that would run without running them
   --help, -h                    Show this help
@@ -138,6 +141,7 @@ while [[ $# -gt 0 ]]; do
 		--oss-only) oss_only=1; shift ;;
 		--commercial-only) commercial_only=1; shift ;;
 		--hotfixes) hotfixes=1; shift ;;
+		--quiet|-q) quiet=1; shift ;;
 		--dry-run|-n) dry_run=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
@@ -150,6 +154,7 @@ done
 (( oss_only )) && [[ $subcommand != list ]] && usage_error "--oss-only is only valid with list"
 (( commercial_only )) && [[ $subcommand != list ]] && usage_error "--commercial-only is only valid with list"
 (( hotfixes )) && [[ $subcommand != list ]] && usage_error "--hotfixes is only valid with list"
+(( quiet )) && [[ $subcommand != list ]] && usage_error "--quiet is only valid with list"
 (( oss_only && commercial_only )) && usage_error "--oss-only and --commercial-only cannot be combined"
 (( dry_run )) && [[ $subcommand == list ]] && usage_error "--dry-run is only valid with create and set-due-date"
 
@@ -240,6 +245,7 @@ need_repo() {
 }
 
 show_repos() {
+	(( quiet )) && return 0
 	[[ -n "$oss_repo" ]] && echo "oss: $oss_repo ($oss_source)" >&2
 	[[ -n "$commercial_repo" ]] && echo "commercial: $commercial_repo ($commercial_source)" >&2
 }
@@ -320,7 +326,7 @@ cmd_list() {
 	sel=("${(@f)$(selected_rows)}")
 	sel=("${(@)sel:#}")
 	if (( ! ${#sel[@]} )); then
-		echo "No milestones matched." >&2
+		(( quiet )) || echo "No milestones matched." >&2
 		return 0
 	fi
 	if (( oneline )); then

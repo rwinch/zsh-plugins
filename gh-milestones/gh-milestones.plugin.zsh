@@ -5,7 +5,7 @@ alias ghm=gh-milestones
 # OSS milestones due this month plus commercial hotfixes due next month, comma separated
 ghmr() {
 	{
-		gh-milestones list --oss-only --this-month --oneline "$@"
-		gh-milestones list --commercial-only --next-month --hotfixes --oneline "$@"
+		gh-milestones list --quiet --oss-only --this-month --oneline "$@"
+		gh-milestones list --quiet --commercial-only --next-month --hotfixes --oneline "$@"
 	} | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -
 }

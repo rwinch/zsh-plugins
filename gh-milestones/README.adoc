@@ -82,6 +82,7 @@ gh-milestones [list|create|set-due-date] [OPTIONS]
 | `--oss-only` | `list` only. Only OSS milestones.
 | `--commercial-only` | `list` only. Only commercial milestones. Cannot be combined with `--oss-only`.
 | `--hotfixes` | `list` only. Only commercial milestones with 4 part titles (`<major>.<minor>.<patch>.<hotfix>`). OSS milestones are not affected, use `--commercial-only` to drop them.
+| `--quiet`, `-q` | `list` only. Do not print the repositories or the "No milestones matched" message to stderr. Errors are still printed. `ghmr` uses it.
 | `--oneline` | `list` only. Print the unique titles separated by commas on one line.
 | `--dry-run`, `-n` | `create` and `set-due-date` only. Validate and print the `gh` commands without running them.
 | `--help`, `-h` | Display the help message.

@@ -202,11 +202,17 @@ t "list: --hotfixes keeps only 4 part commercial titles and does not touch OSS" 
 	run create --hotfixes; expect_rc 1; expect_out "only valid with list"
 '
 
+t "list: --quiet hides the repositories and the no match message, only valid with list" '
+	run list --quiet --this-month --oneline; expect_rc 0; expect_eq "7.0.1"
+	run list --quiet --due "1999-*"; expect_rc 0; expect_eq ""
+	run create --quiet; expect_rc 1; expect_out "only valid with list"
+'
+
 t "ghmr: OSS this month plus commercial hotfixes next month" '
 	local tab=$'"'"'\t'"'"'
 	print -r -- "7${tab}7.0.1.1${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0
 8${tab}7.0.2${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0" >> $FIX/acme_proj-commercial.tsv
-	out=$(cd $W && zsh -c "source ${SCRIPT:h}/gh-milestones.plugin.zsh; ghmr" 2>/dev/null)
+	out=$(cd $W && zsh -c "source ${SCRIPT:h}/gh-milestones.plugin.zsh; ghmr" 2>&1)
 	expect_eq "7.0.1,7.0.1.1"
 '
 
