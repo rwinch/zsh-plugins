@@ -37,6 +37,7 @@ typeset -A up_branch     # branch -> branch name on that remote
 typeset -a problems
 typeset -A changed       # branch -> 1 when an earlier hop would change it
 typeset -A rel_changed_flag
+pulled=0                 # number of branches fast-forwarded by --pull
 
 invoke_dir=""
 original_ref=""
@@ -66,8 +67,10 @@ branch must match its upstream. The first branch may be ahead of its upstream
 Nothing is pushed: the push commands are printed at the end.
 
 OPTIONS:
-  --dry-run, -n        Fetch, validate and print what would happen. Changes nothing.
-  --pull, -p           Fast-forward every branch to its upstream first
+  --dry-run, -n        Fetch, validate and print what would happen. Nothing is
+                       merged. With --pull, the pull is still done (it is the only
+                       change), so 'git-merge-forward -n -p ...' only pulls.
+  --pull, -p           Fast-forward every branch that is only behind its upstream
   --allow-ahead, -a    Let any branch in the chain be ahead of its upstream (behind
                        and diverged still fail). Useful when resuming an aborted
                        run, and when several branches carry their own unpushed
@@ -487,6 +490,7 @@ pull_branches() {
 		if [[ "$ab_behind" -gt 0 && "$ab_ahead" -eq 0 ]]; then
 			ref="refs/remotes/${up_remote[$b]}/${up_branch[$b]}"
 			echo "Pulling '$b' ($ab_behind commit(s)) from $(upstream_display $b)"
+			(( pulled++ ))
 			if is_branch_checked_out "$b"; then
 				dir=$(resolve_dir_for_branch "$b")
 				if ! git -C "$dir" merge --ff-only "$ref" > /dev/null 2>&1; then
@@ -509,6 +513,7 @@ pull_branches() {
 		ref="refs/remotes/$rr/$rb"
 		[[ "$(git rev-parse refs/heads/$rb)" == "$(git rev-parse $ref)" ]] && continue
 		echo "Pulling '$rb' from $rr/$rb"
+		(( pulled++ ))
 		if is_branch_checked_out "$rb"; then
 			dir=$(resolve_dir_for_branch "$rb")
 			git -C "$dir" merge --ff-only "$ref" > /dev/null 2>&1 || { echo "Error: cannot fast-forward '$rb' to $rr/$rb (dir: $dir)" >&2; exit 1; }
@@ -929,10 +934,6 @@ done
 # ---------------------------------------------------------------------------
 # Argument checks (no git yet)
 # ---------------------------------------------------------------------------
-if [[ $dry_run -eq 1 && $do_pull -eq 1 ]]; then
-	usage_error "--dry-run cannot be combined with --pull"
-fi
-
 if [[ $disclosures -eq 1 ]]; then
 	[[ ${#branches[@]} -ge 1 ]] || usage_error "--disclosures needs at least one generation branch"
 elif [[ ${#branches[@]} -eq 0 ]]; then
@@ -1023,7 +1024,11 @@ print_plan
 
 if [[ $dry_run -eq 1 ]]; then
 	echo ""
-	echo "Dry run: nothing was changed. At the end it would print:"
+	if (( pulled > 0 )); then
+		echo "Dry run: nothing was merged ($pulled branch(es) were fast-forwarded by --pull). At the end it would print:"
+	else
+		echo "Dry run: nothing was changed. At the end it would print:"
+	fi
 	print_push_commands
 	exit 0
 fi

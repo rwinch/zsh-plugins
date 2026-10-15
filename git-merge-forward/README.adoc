@@ -45,8 +45,8 @@ git merge-forward [OPTIONS] --releases VERSION[,VERSION ...]
 |===
 | Option | Short | Description
 
-| `--dry-run` | `-n` | Fetch, validate and print what would happen. Changes nothing and exits 0.
-| `--pull` | `-p` | Fast-forward every branch to its upstream first. Cannot be combined with `--dry-run`.
+| `--dry-run` | `-n` | Fetch, validate and print what would happen. Nothing is merged, and it exits 0. With `--pull` the pull is still done, because it is the only change: `git merge-forward -n -p ...` only pulls.
+| `--pull` | `-p` | Fast-forward every branch that is only behind its upstream first.
 | `--allow-ahead` | `-a` | Let any branch in the chain be ahead of its upstream. Behind and diverged still fail. Useful when resuming an aborted run, and when several branches carry their own unpushed commits.
 | `--ours` | `-o` | Record across hops with `git merge -s ours` (nothing is carried, so there are no conflicts). Down hops stay real merges.
 | `--disclosures` | `-d` | The arguments are OSS generation branches, oldest to newest. One generation is enough.

@@ -76,6 +76,7 @@ expect_out() { print -r -- "$out" | grep -qE -- "$1" || { echo "    expected out
 reject_out() { print -r -- "$out" | grep -qE -- "$1" && { echo "    output must not match: $1"; echo "${out}" | sed 's/^/      | /'; return 1; }; return 0 }
 lacks_file() { ! git -C $W show "$1:$2" > /dev/null 2>&1 }
 has_file() { git -C $W show "$1:$2" > /dev/null 2>&1 }
+not_contains() { ! git -C $W merge-base --is-ancestor "$1" "$2" }
 contains() { git -C $W merge-base --is-ancestor "$1" "$2" }
 branch_of() { git -C $1 rev-parse --abbrev-ref HEAD }
 
@@ -98,7 +99,6 @@ t "args: no args, single branch, unknown option, dry-run+pull, duplicates" '
 	run main; expect_rc 1; expect_out "single branch needs --disclosures"
 	run -x a b; expect_rc 1; expect_out "Unknown option"
 	run -r; expect_rc 1
-	run -n -p a b; expect_rc 1; expect_out "cannot be combined"
 	run a a; expect_rc 1; expect_out "more than once"
 '
 
@@ -161,6 +161,17 @@ t "behind fails, --pull fast-forwards it" '
 	run --pull 7.0.x main; expect_rc 0
 	has_file main up.txt
 	contains 7.0.x main
+'
+
+t "dry run with --pull only pulls, then prints the plan" '
+	commit_on $S main up.txt; git -C $S push -q oss main
+	commit_on $W 7.0.x fix.txt
+	run -n 7.0.x main; expect_rc 1; expect_out "main: behind oss/main by 1"
+	run -n -p 7.0.x main; expect_rc 0
+	expect_out "Pulling .main."
+	expect_out "Dry run: nothing was merged \\(1 branch\\(es\\) were fast-forwarded"
+	has_file main up.txt
+	not_contains 7.0.x main
 '
 
 t "diverged fails" '
@@ -315,9 +326,11 @@ t "conflict: prompt appears and resume works" '
 	commit_on $W main f
 	git -C $W push -q oss main
 	commit_on $W 7.0.x f
-	( sleep 4; git -C $W add -A; git -C $W commit -q --no-edit ) &
-	set +e; out=$( (sleep 7; echo) | script -q /dev/null zsh -c "cd $W && $SCRIPT --allow-ahead 7.0.x main" 2>&1 ); set -e
-	wait
+	# The stdin side waits for the conflict, resolves it, then presses Enter.
+	set +e
+	out=$( ( for i in {1..150}; do git -C $W rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && break; sleep 0.2; done
+		git -C $W add -A; git -C $W commit -q --no-edit; sleep 1; echo; sleep 5 ) | script -q /dev/null zsh -c "cd $W && $SCRIPT --allow-ahead 7.0.x main" 2>&1 )
+	set -e
 	expect_out "Merge conflict merging"
 	expect_out "Merge conflict resolved"
 	expect_out "Done!"
