@@ -62,8 +62,10 @@ commit_on() {
 	git -C $1 commit -qm "change $3 on $2"
 }
 
+# Nothing is fetched by the plugin, so fetch like git-fetch-branches would (unless NOFETCH=1)
 run() {
 	set +e
+	[[ -z "$NOFETCH" ]] && git -C $W fetch -q --all
 	out=$(cd $W && $SCRIPT "$@" 2>&1)
 	rc=$?
 	set -e
@@ -94,7 +96,7 @@ t() {
 }
 
 # ---------------------------------------------------------------------------
-t "args: no args, single branch, unknown option, dry-run+pull, duplicates" '
+t "args: no args, single branch, unknown option, duplicates" '
 	run; expect_rc 1
 	run main; expect_rc 1; expect_out "single branch needs --disclosures"
 	run -x a b; expect_rc 1; expect_out "Unknown option"
@@ -154,23 +156,19 @@ t "validation: in-progress merge fails" '
 	expect_out "merge is in progress"
 '
 
-t "behind fails, --pull fast-forwards it" '
+t "behind fails" '
 	commit_on $S main up.txt; git -C $S push -q oss main
 	commit_on $W 7.0.x fix.txt
 	run 7.0.x main; expect_rc 1; expect_out "main: behind oss/main by 1"
-	run --pull 7.0.x main; expect_rc 0
-	has_file main up.txt
-	contains 7.0.x main
 '
 
-t "dry run with --pull only pulls, then prints the plan" '
+t "refs are not fetched or pulled" '
 	commit_on $S main up.txt; git -C $S push -q oss main
 	commit_on $W 7.0.x fix.txt
-	run -n 7.0.x main; expect_rc 1; expect_out "main: behind oss/main by 1"
-	run -n -p 7.0.x main; expect_rc 0
-	expect_out "Pulling .main."
-	expect_out "Dry run: nothing was merged \\(1 branch\\(es\\) were fast-forwarded"
-	has_file main up.txt
+	NOFETCH=1 run -n 7.0.x main; expect_rc 0
+	reject_out "Fetching"
+	run 7.0.x main; expect_rc 1; expect_out "main: behind oss/main by 1"
+	run --pull 7.0.x main; expect_rc 1; expect_out "Unknown option"
 	not_contains 7.0.x main
 '
 

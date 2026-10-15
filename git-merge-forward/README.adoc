@@ -14,7 +14,8 @@ It never pushes. At the end it prints the exact `git push --atomic` commands.
 * `--disclosures` treats the arguments as OSS generations and also merges the `disclosure/frozen` and `disclosure/active` branches (down and across)
 * `--ours` records across hops with `git merge -s ours`, for branches that carry their own version or dependency updates
 * `--releases` rebuilds `release/<version>` branches on top of their disclosure branch (needs a force push, which the printed command carries with a lease)
-* `--dry-run` fetches, validates and prints what would happen, and changes nothing
+* `--dry-run` validates and prints what would happen, and changes nothing
+* It never fetches or pulls: run link:../git-fetch-branches[git-fetch-branches] and link:../git-pull-branches[git-pull-branches] first
 * Everything is validated before anything changes, and all problems are reported together
 * If nothing needs merging it says `Everything is up to date, nothing to merge.` and exits 0
 * Conflicts stop at a prompt with the exact commands to resolve them. A merge that fails for another reason prints the error and waits so that you can fix it and retry.
@@ -45,8 +46,7 @@ git merge-forward [OPTIONS] --releases VERSION[,VERSION ...]
 |===
 | Option | Short | Description
 
-| `--dry-run` | `-n` | Fetch, validate and print what would happen. Nothing is merged, and it exits 0. With `--pull` the pull is still done, because it is the only change: `git merge-forward -n -p ...` only pulls.
-| `--pull` | `-p` | Fast-forward every branch that is only behind its upstream first.
+| `--dry-run` | `-n` | Validate and print what would happen. Nothing is changed, and it exits 0.
 | `--allow-ahead` | `-a` | Let any branch in the chain be ahead of its upstream. Behind and diverged still fail. Useful when resuming an aborted run, and when several branches carry their own unpushed commits.
 | `--ours` | `-o` | Record across hops with `git merge -s ours` (nothing is carried, so there are no conflicts). Down hops stay real merges.
 | `--disclosures` | `-d` | The arguments are OSS generation branches, oldest to newest. One generation is enough.
@@ -62,8 +62,7 @@ Nothing changes until all of this passes. Problems are collected and reported to
 . Every branch exists locally (it is never created for you)
 . Every branch has an upstream, and the upstream still exists on the remote
 . Every worktree that will be touched is clean (untracked files count), and has no merge, rebase or cherry-pick in progress
-. After fetching every remote involved, every branch equals its upstream. The *first* branch may be ahead of its upstream, because that is the work you are merging forward. Behind and diverged always fail. With `--allow-ahead` any branch may be ahead.
-. With `--pull`, branches that are only behind are fast-forwarded before the check
+. Every branch equals its upstream, as of the last fetch (nothing is fetched, see link:../git-fetch-branches[git-fetch-branches]). The *first* branch may be ahead of its upstream, because that is the work you are merging forward. Behind and diverged always fail. With `--allow-ahead` any branch may be ahead.
 
 A missing upstream is reported with the command that sets it (`git branch --set-upstream-to=<remote>/<branch> <branch>`).
 Each branch is compared with its *own* upstream, so there is no `--remote` option.
@@ -81,9 +80,6 @@ With `--disclosures` every argument is a generation and the plan follows the "Ho
 [source,text]
 ----
 $ git merge-forward --dry-run --disclosures 7.0.x main
-Fetching 'oss'...
-Fetching 'commercial'...
-
 Plan:
   (1) 7.0.x                   -> main                     across merge would merge
         dir: /code/spring-merge   upstream: oss/main
@@ -131,7 +127,7 @@ Use it together with a merge, or alone to update only the releases from the curr
 * A hotfix version (`7.0.1.1`) is based on `disclosure/active/<major>.<minor>.x`. Every other version is based on `disclosure/frozen/<major>.<minor>.x`.
 * At most one version per base branch: one hotfix and one non-hotfix per generation.
 * A version whose generation has no disclosure branches maps to the `main` disclosure branches, but only when it is the next generation after the newest existing one (`7.1.0` when `7.0.x` is the newest). A skipped minor or major, or several new generations, is an error.
-* The release branch must exist on the remote of its base branch. A missing local branch is created from it. A local release branch that differs from the remote is an error (`--pull` fast-forwards one that is only behind). Merge commits among the release-only commits are an error.
+* The release branch must exist on the remote of its base branch. A missing local branch is created from it. A local release branch that differs from the remote is an error (link:../git-pull-branches[git-pull-branches] fast-forwards one that is only behind). Merge commits among the release-only commits are an error.
 * A rebase conflict stops at a prompt: resolve it and run `git -C <dir> rebase --continue`, then press Enter.
 * The release is pushed with the other branches of its remote, as `+release/<version>` with `--force-with-lease=release/<version>:<sha>`, where the sha is what the remote branch was when it was fetched.
 
@@ -162,8 +158,8 @@ git merge-forward 7.0.x 7.1.x main
 # see what would happen
 git merge-forward --dry-run 7.0.x main
 
-# fast-forward every branch first
-git merge-forward --pull 7.0.x main
+# fetch and fast-forward every branch first
+git fetch-branches 7.0.x main && git pull-branches 7.0.x main
 
 # resume after an aborted run (the merged branches are ahead of their upstreams)
 git merge-forward --allow-ahead 7.0.x main
@@ -201,6 +197,8 @@ DEBUG=1 git-merge-forward/test/test.sh    # also print the output of every run
 
 == Related Plugins
 
+* link:../git-fetch-branches[git-fetch-branches] - Fetch and report how each branch compares to its upstream, run it before merging
+* link:../git-pull-branches[git-pull-branches] - Fast-forward the branches that are behind, run it before merging
 * link:../git-create-worktrees[git-create-worktrees] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
 * link:../gmo[gmo] - Records a single merge with `git merge -s ours` and an editable message
 * link:../../spring-merge-tutorial[spring-merge-tutorial] - Describes the disclosure branch merges the `--disclosures` plan follows

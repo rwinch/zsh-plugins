@@ -2,7 +2,6 @@
 
 # ---- options ----
 dry_run=0                # --dry-run
-do_pull=0                # --pull
 allow_ahead=0            # --allow-ahead
 ours=0                   # --ours
 disclosures=0            # --disclosures
@@ -37,7 +36,6 @@ typeset -A up_branch     # branch -> branch name on that remote
 typeset -a problems
 typeset -A changed       # branch -> 1 when an earlier hop would change it
 typeset -A rel_changed_flag
-pulled=0                 # number of branches fast-forwarded by --pull
 
 invoke_dir=""
 original_ref=""
@@ -61,16 +59,14 @@ arguments are the whole chain.
 
 Everything is validated before anything changes, and all problems are reported
 together: every branch exists locally, has an upstream, and has a clean
-worktree (untracked files count); then the remotes are fetched, and every
-branch must match its upstream. The first branch may be ahead of its upstream
-(that is what you merge forward), every other branch must be equal.
+worktree (untracked files count); then every branch must match its upstream
+as of the last fetch (nothing is fetched or pulled: run git-fetch-branches and
+git-pull-branches first). The first branch may be ahead of its upstream (that is
+what you merge forward), every other branch must be equal.
 Nothing is pushed: the push commands are printed at the end.
 
 OPTIONS:
-  --dry-run, -n        Fetch, validate and print what would happen. Nothing is
-                       merged. With --pull, the pull is still done (it is the only
-                       change), so 'git-merge-forward -n -p ...' only pulls.
-  --pull, -p           Fast-forward every branch that is only behind its upstream
+  --dry-run, -n        Validate and print what would happen. Nothing is changed.
   --allow-ahead, -a    Let any branch in the chain be ahead of its upstream (behind
                        and diverged still fail). Useful when resuming an aborted
                        run, and when several branches carry their own unpushed
@@ -105,7 +101,6 @@ VERSIONS (--releases):
 EXAMPLES:
   git-merge-forward 7.0.x 7.1.x main
   git-merge-forward --dry-run 7.0.x main
-  git-merge-forward --pull 7.0.x main
   git-merge-forward --allow-ahead 7.0.x main        # resume after an abort
   git-merge-forward --disclosures 7.0.x main
   git-merge-forward --releases 7.0.1,7.0.1.1
@@ -444,7 +439,7 @@ validate_local() {
 	done
 }
 
-# After the fetch: upstream refs exist, release branches exist on the remote.
+# Upstream refs exist, release branches exist on the remote.
 validate_remote_refs() {
 	local b i rb rr base
 	for b in "${all_branches[@]}"; do
@@ -471,54 +466,8 @@ validate_remote_refs() {
 			lsha=$(git rev-parse "refs/heads/$rb")
 			rsha=$(git rev-parse "refs/remotes/$rr/$rb")
 			if [[ "$lsha" != "$rsha" ]]; then
-				if [[ $do_pull -eq 1 ]] && git merge-base --is-ancestor "$lsha" "$rsha"; then
-					: # behind only, --pull fast-forwards it
-				else
-					problem "$rb: local branch differs from $rr/$rb (use --pull if it is only behind, otherwise reset or delete the local branch)"
-				fi
+				problem "$rb: local branch differs from $rr/$rb (run git-pull-branches if it is only behind, otherwise reset or delete the local branch)"
 			fi
-		fi
-	done
-}
-
-# Fast-forwards every branch that is only behind its upstream.
-pull_branches() {
-	local b i rb dir rr ref
-	for b in "${all_branches[@]}"; do
-		[[ -z "${up_remote[$b]}" ]] && continue
-		ahead_behind "$b"
-		if [[ "$ab_behind" -gt 0 && "$ab_ahead" -eq 0 ]]; then
-			ref="refs/remotes/${up_remote[$b]}/${up_branch[$b]}"
-			echo "Pulling '$b' ($ab_behind commit(s)) from $(upstream_display $b)"
-			(( pulled++ ))
-			if is_branch_checked_out "$b"; then
-				dir=$(resolve_dir_for_branch "$b")
-				if ! git -C "$dir" merge --ff-only "$ref" > /dev/null 2>&1; then
-					echo "Error: cannot fast-forward '$b' to $(upstream_display $b) (dir: $dir)" >&2
-					exit 1
-				fi
-			else
-				if ! git fetch . "${ref}:refs/heads/${b}"; then
-					echo "Error: cannot fast-forward '$b' to $(upstream_display $b)" >&2
-					exit 1
-				fi
-			fi
-		fi
-	done
-
-	for (( i = 1; i <= ${#rel_version[@]}; i++ )); do
-		rb="release/${rel_version[$i]}"
-		branch_exists "$rb" || continue
-		rr="${up_remote[${rel_base[$i]}]}"
-		ref="refs/remotes/$rr/$rb"
-		[[ "$(git rev-parse refs/heads/$rb)" == "$(git rev-parse $ref)" ]] && continue
-		echo "Pulling '$rb' from $rr/$rb"
-		(( pulled++ ))
-		if is_branch_checked_out "$rb"; then
-			dir=$(resolve_dir_for_branch "$rb")
-			git -C "$dir" merge --ff-only "$ref" > /dev/null 2>&1 || { echo "Error: cannot fast-forward '$rb' to $rr/$rb (dir: $dir)" >&2; exit 1; }
-		else
-			git fetch . "${ref}:refs/heads/${rb}" > /dev/null 2>&1 || { echo "Error: cannot fast-forward '$rb' to $rr/$rb" >&2; exit 1; }
 		fi
 	done
 }
@@ -535,7 +484,7 @@ check_up_to_date() {
 		if [[ "$ab_behind" -gt 0 && "$ab_ahead" -gt 0 ]]; then
 			problem "$b: diverged from $(upstream_display $b) ($ab_ahead ahead, $ab_behind behind), rebase or merge $(upstream_display $b) first"
 		elif [[ "$ab_behind" -gt 0 ]]; then
-			problem "$b: behind $(upstream_display $b) by $ab_behind commit(s) (use --pull)"
+			problem "$b: behind $(upstream_display $b) by $ab_behind commit(s) (run git-pull-branches)"
 		else
 			allowed=0
 			[[ "$b" == "$chain_first" || $allow_ahead -eq 1 ]] && allowed=1
@@ -912,7 +861,6 @@ restore_original_branch() {
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--dry-run|-n) dry_run=1; shift ;;
-		--pull|-p) do_pull=1; shift ;;
 		--allow-ahead|-a) allow_ahead=1; shift ;;
 		--ours|-o) ours=1; shift ;;
 		--disclosures|-d) disclosures=1; shift ;;
@@ -991,25 +939,11 @@ fi
 validate_local
 fail_if_problems
 
-# 2. Fetch every remote involved (also on a dry run).
-typeset -a fetch_remotes
-for b in "${all_branches[@]}"; do
-	(( ${fetch_remotes[(Ie)${up_remote[$b]}]} )) || fetch_remotes+=("${up_remote[$b]}")
-done
-for r in "${fetch_remotes[@]}"; do
-	echo "Fetching '$r'..."
-	if ! git fetch "$r"; then
-		echo "Error: Failed to fetch from remote '$r'" >&2
-		exit 1
-	fi
-done
-echo ""
-
+# 2. Remote refs: upstreams and release branches exist.
 validate_remote_refs
 fail_if_problems
 
-# 3. --pull, then every branch must match its upstream.
-[[ $do_pull -eq 1 ]] && pull_branches
+# 3. Every branch must match its upstream.
 check_up_to_date
 fail_if_problems
 
@@ -1024,11 +958,7 @@ print_plan
 
 if [[ $dry_run -eq 1 ]]; then
 	echo ""
-	if (( pulled > 0 )); then
-		echo "Dry run: nothing was merged ($pulled branch(es) were fast-forwarded by --pull). At the end it would print:"
-	else
-		echo "Dry run: nothing was changed. At the end it would print:"
-	fi
+	echo "Dry run: nothing was changed. At the end it would print:"
 	print_push_commands
 	exit 0
 fi
