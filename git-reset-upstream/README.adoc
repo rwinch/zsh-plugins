@@ -1,0 +1,64 @@
+= git-reset-upstream
+
+A zsh plugin that hard resets branches to their remote tracked branches, across git worktrees, with `--disclosures` and `--releases` support like link:../git-merge-forward[git-merge-forward].
+
+== Features
+
+* `git reset-upstream 7.0.x main` fetches, then resets each branch to its upstream
+* `--disclosures` also resets `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
+* `--releases` also resets `release/<version>`
+* A branch checked out in a worktree is reset there, any other branch is moved with `git branch -f`
+* `--dry-run` fetches, validates and prints the plan, and changes nothing
+* Everything is validated first (branch exists, has an upstream, worktree clean) and all problems are reported together
+* The SHAs of discarded local commits are printed so they can be recovered
+* Nothing is pushed
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-reset-upstream
+----
+
+The plugin also defines the alias `gru` for `git-reset-upstream`.
+
+== Usage
+
+[source,bash]
+----
+git reset-upstream [OPTIONS] BRANCH [BRANCH ...]
+git reset-upstream [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git reset-upstream [OPTIONS] --releases VERSION[,VERSION ...]
+----
+
+|===
+|Option |Description
+
+|`--dry-run`, `-n`
+|Fetch, validate and print the plan. Nothing is reset.
+
+|`--disclosures`, `-d`
+|Arguments are OSS generations. Each is reset with its disclosure frozen and active branches. `--disclosure` is accepted too.
+
+|`--releases`, `-r LIST`
+|Comma separated release versions, for example `7.0.1,7.0.1.1,7.1.0-RC1`.
+
+|`--help`, `-h`
+|Show help.
+|===
+
+== Examples
+
+[source,bash]
+----
+git reset-upstream 7.0.x main
+git reset-upstream --dry-run --disclosures 7.0.x 7.1.x main
+git reset-upstream -d 7.0.x main -r 7.0.1.1
+----
+
+== Tests
+
+[source,bash]
+----
+zsh test/test.sh
+----
