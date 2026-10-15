@@ -177,6 +177,11 @@ t "list: --this-month" '
 	run list --this-month; expect_rc 0; expect_out "7.0.1"; reject_out "7.1.0-M1"
 '
 
+t "list: --next-month matches next month only, and combines with --this-month" '
+	run list --next-month; expect_rc 0; expect_out "No milestones matched"
+	run list --this-month --next-month; expect_rc 0; expect_out "7.0.1"
+'
+
 t "list: nothing matched is not an error" '
 	run list --due "1999-*"; expect_rc 0; expect_out "No milestones matched"
 '

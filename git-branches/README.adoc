@@ -41,7 +41,7 @@ Loading the group and a subfolder together is harmless, it only repeats a `PATH`
 Two aliases from other plugins print the arguments on one line:
 
 * `svaob` (link:../spring-versions[spring-versions]) prints the OSS branches, for example `7.0.x 7.1.x main`
-* `ghmr` (link:../gh-milestones[gh-milestones]) prints this month's milestones separated by commas, for `--releases` and for `git-branches-release`
+* `ghmr` (link:../gh-milestones[gh-milestones]) prints this month's and next month's milestones separated by commas, for `--releases` and for `git-branches-release`
 
 [source,bash]
 ----

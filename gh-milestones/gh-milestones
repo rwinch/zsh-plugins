@@ -5,6 +5,7 @@ typeset -a cmds
 subcommand=list
 dry_run=0       # --dry-run
 this_month=0    # --this-month
+next_month=0    # --next-month
 oneline=0       # --oneline
 state=open      # --state
 state_given=0
@@ -47,6 +48,8 @@ OPTIONS:
                                 May be repeated. Milestones without a due date never
                                 match. (With create, --due is the date to set.)
   --this-month                  list only: same as --due 'YYYY-MM-*' for this month
+  --next-month                  list only: same as --due 'YYYY-MM-*' for next month (can be
+                                combined with --this-month)
   --oneline                     list only: print the unique titles separated by commas
                                 on one line, for --releases (e.g. 7.0.1,7.1.0-M1)
   --dry-run, -n                 create/set-due-date: validate and print the gh
@@ -121,6 +124,7 @@ while [[ $# -gt 0 ]]; do
 				shift
 			done ;;
 		--this-month) this_month=1; shift ;;
+		--next-month) next_month=1; shift ;;
 		--oneline) oneline=1; shift ;;
 		--dry-run|-n) dry_run=1; shift ;;
 		--help|-h) usage; exit 0 ;;
@@ -141,6 +145,7 @@ case $subcommand in
 	create)
 		(( ${#positionals[@]} )) && usage_error "Unexpected argument: ${positionals[1]}"
 		(( this_month )) && usage_error "--this-month is not valid with create"
+		(( next_month )) && usage_error "--next-month is not valid with create"
 		(( state_given )) && usage_error "--state is not valid with create"
 		(( ${#oss_titles[@]} + ${#commercial_titles[@]} )) || usage_error "create needs --oss and/or --commercial with at least one title"
 		(( ${#due_globs[@]} == 1 )) || usage_error "create needs exactly one --due YYYY-MM-DD"
@@ -151,13 +156,14 @@ case $subcommand in
 		(( ${#positionals[@]} )) || usage_error "set-due-date needs a date (YYYY-MM-DD) and at least one milestone title"
 		new_date=${positionals[1]}
 		[[ $new_date =~ $date_re ]] || usage_error "Date must be like 2026-11-17, got: $new_date"
-		(( this_month || state_given || ${#due_globs[@]} )) && usage_error "set-due-date takes only a date and milestone titles, not --due, --this-month or --state"
+		(( this_month || next_month || state_given || ${#due_globs[@]} )) && usage_error "set-due-date takes only a date and milestone titles, not --due, --this-month, --next-month or --state"
 		title_args=("${(@u)positionals[2,-1]}")
 		(( ${#title_args[@]} )) || usage_error "set-due-date needs at least one milestone title"
 		state=all ;;
 esac
 
 (( this_month )) && due_globs+=("$(date +%Y-%m)-*")
+(( next_month )) && due_globs+=("$(date -v+1m +%Y-%m 2>/dev/null || date -d "$(date +%Y-%m-01) +1 month" +%Y-%m)-*")
 
 command -v gh >/dev/null 2>&1 || { echo "Error: the gh CLI is not installed" >&2; exit 1; }
 
