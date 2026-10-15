@@ -1,0 +1,404 @@
+#!/bin/zsh
+
+typeset -a due_globs title_args oss_titles commercial_titles problems rows
+typeset -a cmds
+subcommand=list
+dry_run=0       # --dry-run
+this_month=0    # --this-month
+oneline=0       # --oneline
+state=open      # --state
+state_given=0
+oss_repo_arg=""        # --oss-repo
+commercial_repo_arg="" # --commercial-repo
+oss_repo=""
+commercial_repo=""
+new_date=""
+nl=$'\n'
+
+usage() {
+	cat <<'USAGE'
+Usage: gh-milestones [list|create|set-due-date] [OPTIONS]
+
+List, create and re-date GitHub milestones in an OSS repository (<org>/<name>)
+and its commercial repository (<org>/<name>-commercial) using the gh CLI.
+
+COMMANDS:
+  list                          List milestones from both repositories (default)
+  create [--oss T...] [--commercial T...] --due DATE
+                                Create milestones. Titles after --oss go to the OSS
+                                repository, titles after --commercial go to the
+                                commercial repository (a title in both is created in
+                                both). --due is a single YYYY-MM-DD for all of them.
+                                Fails before creating anything if any title already
+                                exists (open or closed) in its target repository.
+  set-due-date DATE TITLE...    Set the due date (YYYY-MM-DD) on the milestones with
+                                these titles (open or closed) in both repositories.
+                                At least one title is required, and no filters are
+                                allowed. A title missing from one repository is
+                                skipped there, but must exist in at least one.
+
+OPTIONS:
+  --oss-repo ORG/NAME           OSS repository (default: 'oss' remote, then 'origin')
+  --commercial-repo ORG/NAME    Commercial repository (default: if --oss-repo is given
+                                its name + '-commercial', else the 'commercial'
+                                remote, else the OSS name + '-commercial')
+  --state open|closed|all       list only: milestones to select (default: open)
+  --due GLOB                    list only: select by due date (UTC YYYY-MM-DD), e.g. '2026-10-*'.
+                                May be repeated. Milestones without a due date never
+                                match. (With create, --due is the date to set.)
+  --this-month                  list only: same as --due 'YYYY-MM-*' for this month
+  --oneline                     list only: print the unique titles separated by commas
+                                on one line, for --releases (e.g. 7.0.1,7.1.0-M1)
+  --dry-run, -n                 create/set-due-date: validate and print the gh
+                                commands that would run without running them
+  --help, -h                    Show this help
+
+EXAMPLES:
+  gh-milestones
+  gh-milestones list --this-month --oneline
+  gh-milestones list --state all --due '2026-1?-*'
+  gh-milestones create --oss 7.0.1 7.0.2 --commercial 7.0.1 --due 2026-11-17 -n
+  gh-milestones set-due-date 2026-12-01 7.0.1 7.0.2
+
+REQUIREMENTS:
+  - The gh CLI, authenticated
+  - Run inside a git repository unless both --oss-repo and --commercial-repo are given
+USAGE
+}
+
+usage_error() {
+	echo "Error: $1" >&2
+	echo "Run 'gh-milestones --help' for usage." >&2
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Problem collection
+# ---------------------------------------------------------------------------
+problem() {
+	problems+=("$1")
+}
+
+fail_if_problems() {
+	[[ ${#problems[@]} -eq 0 ]] && return 0
+	local p
+	echo "Error: ${#problems[@]} problem(s) found. Nothing was $1:" >&2
+	for p in "${problems[@]}"; do
+		echo "  - $p" >&2
+	done
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+case $1 in
+	list|create|set-due-date) subcommand=$1; shift ;;
+esac
+
+typeset -a positionals
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--oss-repo|--commercial-repo|--state|--due)
+			[[ -z "$2" || "$2" == -* ]] && usage_error "$1 requires a value"
+			case $1 in
+				--oss-repo) oss_repo_arg=$2 ;;
+				--commercial-repo) commercial_repo_arg=$2 ;;
+				--state) state=$2; state_given=1 ;;
+				--due) due_globs+=("$2") ;;
+			esac
+			shift 2 ;;
+		--oss|--commercial)
+			[[ $subcommand == create ]] || usage_error "$1 is only valid with create"
+			flag=$1; shift
+			[[ $# -gt 0 && "$1" != -* ]] || usage_error "$flag requires at least one milestone title"
+			while [[ $# -gt 0 && "$1" != -* ]]; do
+				if [[ $flag == --oss ]]; then
+					oss_titles+=("${(@s:,:)1}")
+				else
+					commercial_titles+=("${(@s:,:)1}")
+				fi
+				shift
+			done ;;
+		--this-month) this_month=1; shift ;;
+		--oneline) oneline=1; shift ;;
+		--dry-run|-n) dry_run=1; shift ;;
+		--help|-h) usage; exit 0 ;;
+		-*) usage_error "Unknown option: $1" ;;
+		*) positionals+=("$1"); shift ;;
+	esac
+done
+
+[[ $state == (open|closed|all) ]] || usage_error "--state must be open, closed or all"
+(( oneline )) && [[ $subcommand != list ]] && usage_error "--oneline is only valid with list"
+(( dry_run )) && [[ $subcommand == list ]] && usage_error "--dry-run is only valid with create and set-due-date"
+
+date_re='^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
+
+case $subcommand in
+	list)
+		(( ${#positionals[@]} )) && usage_error "Unexpected argument: ${positionals[1]}" ;;
+	create)
+		(( ${#positionals[@]} )) && usage_error "Unexpected argument: ${positionals[1]}"
+		(( this_month )) && usage_error "--this-month is not valid with create"
+		(( state_given )) && usage_error "--state is not valid with create"
+		(( ${#oss_titles[@]} + ${#commercial_titles[@]} )) || usage_error "create needs --oss and/or --commercial with at least one title"
+		(( ${#due_globs[@]} == 1 )) || usage_error "create needs exactly one --due YYYY-MM-DD"
+		[[ ${due_globs[1]} =~ $date_re ]] || usage_error "--due must be a date like 2026-11-17, got: ${due_globs[1]}"
+		new_date=${due_globs[1]}
+		due_globs=() ;;
+	set-due-date)
+		(( ${#positionals[@]} )) || usage_error "set-due-date needs a date (YYYY-MM-DD) and at least one milestone title"
+		new_date=${positionals[1]}
+		[[ $new_date =~ $date_re ]] || usage_error "Date must be like 2026-11-17, got: $new_date"
+		(( this_month || state_given || ${#due_globs[@]} )) && usage_error "set-due-date takes only a date and milestone titles, not --due, --this-month or --state"
+		title_args=("${(@u)positionals[2,-1]}")
+		(( ${#title_args[@]} )) || usage_error "set-due-date needs at least one milestone title"
+		state=all ;;
+esac
+
+(( this_month )) && due_globs+=("$(date +%Y-%m)-*")
+
+command -v gh >/dev/null 2>&1 || { echo "Error: the gh CLI is not installed" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Repository resolution
+# ---------------------------------------------------------------------------
+# Prints org/name for a git remote, nothing (and fails) if it does not exist.
+remote_repo() {
+	local url
+	url=$(git remote get-url "$1" 2>/dev/null) || return 1
+	url=${url%/}
+	url=${url%.git}
+	local name=${url##*[:/]}
+	local rest=${url%/*}
+	local org=${rest##*[:/]}
+	[[ -n "$org" && -n "$name" ]] || return 1
+	echo "$org/$name"
+}
+
+resolve_repos() {
+	local r
+	if [[ -n "$oss_repo_arg" ]]; then
+		oss_repo=$oss_repo_arg; oss_source="--oss-repo"
+	elif r=$(remote_repo oss); then
+		oss_repo=$r; oss_source="remote oss"
+	elif r=$(remote_repo origin); then
+		oss_repo=$r; oss_source="remote origin"
+	fi
+
+	if [[ -n "$commercial_repo_arg" ]]; then
+		commercial_repo=$commercial_repo_arg; commercial_source="--commercial-repo"
+	elif [[ -n "$oss_repo_arg" && -n "$oss_repo" ]]; then
+		commercial_repo="${oss_repo}-commercial"; commercial_source="--oss-repo + -commercial"
+	elif r=$(remote_repo commercial); then
+		commercial_repo=$r; commercial_source="remote commercial"
+	elif [[ -n "$oss_repo" ]]; then
+		commercial_repo="${oss_repo}-commercial"; commercial_source="oss repository + -commercial"
+	fi
+
+	local repo label
+	for label in oss commercial; do
+		repo=${(P)${:-${label}_repo}}
+		[[ -z "$repo" ]] && continue
+		[[ $repo =~ ^[^/]+/[^/]+$ ]] || problem "$label repository must look like ORG/NAME, got: $repo"
+	done
+}
+
+# Fails the run later (via problems) if the repo for LABEL could not be found.
+need_repo() {
+	local label=$1
+	if [[ -z "${(P)${:-${label}_repo}}" ]]; then
+		if [[ $label == oss ]]; then
+			problem "Could not determine the oss repository (no oss or origin remote). Use --oss-repo ORG/NAME"
+		else
+			problem "Could not determine the commercial repository. Use --commercial-repo ORG/NAME"
+		fi
+	fi
+}
+
+show_repos() {
+	[[ -n "$oss_repo" ]] && echo "oss: $oss_repo ($oss_source)" >&2
+	[[ -n "$commercial_repo" ]] && echo "commercial: $commercial_repo ($commercial_source)" >&2
+}
+
+# ---------------------------------------------------------------------------
+# Milestones
+# ---------------------------------------------------------------------------
+# fetch_milestones LABEL REPO STATE: appends rows to $rows as
+# LABEL<TAB>REPO<TAB>NUMBER<TAB>TITLE<TAB>STATE<TAB>DUE-DATE<TAB>OPEN<TAB>CLOSED
+fetch_milestones() {
+	local label=$1 repo=$2 st=$3 out line
+	out=$(gh api --paginate "repos/$repo/milestones?state=$st&per_page=100" \
+		--jq '.[] | [.number, .title, .state, (.due_on // ""), .open_issues, .closed_issues] | @tsv') || {
+		problem "$label: could not read milestones from $repo"
+		return 1
+	}
+	local -a f
+	for line in "${(@f)out}"; do
+		[[ -z "$line" ]] && continue
+		f=("${(@ps:\t:)line}")
+		rows+=("$label"$'\t'"$repo"$'\t'"${f[1]}"$'\t'"${f[2]}"$'\t'"${f[3]}"$'\t'"${f[4]:0:10}"$'\t'"${f[5]}"$'\t'"${f[6]}")
+	done
+}
+
+# Prints the rows that match the --due globs and the TITLE arguments.
+selected_rows() {
+	local row g due title keep
+	local -a f
+	for row in "${rows[@]}"; do
+		f=("${(@ps:\t:)row}")
+		title=${f[4]}; due=${f[6]}
+		if (( ${#due_globs[@]} )); then
+			keep=0
+			if [[ -n "$due" ]]; then
+				for g in "${due_globs[@]}"; do
+					[[ $due == ${~g} ]] && { keep=1; break }
+				done
+			fi
+			(( keep )) || continue
+		fi
+		if (( ${#title_args[@]} )) && (( ! ${title_args[(Ie)$title]} )); then
+			continue
+		fi
+		print -r -- "$row"
+	done
+}
+
+print_cmds() {
+	local c
+	for c in "${cmds[@]}"; do
+		print -r -- "  ${(j: :)${(@q)${(@Q)${(z)c}}}}"
+	done
+}
+
+run_cmds() {
+	local c
+	local -a argv
+	for c in "${cmds[@]}"; do
+		argv=("${(@Q)${(z)c}}")
+		"${argv[@]}" >/dev/null || { echo "Error: failed: ${(j: :)${(@q)argv}}" >&2; exit 1 }
+	done
+}
+
+cmd_list() {
+	need_repo oss; need_repo commercial
+	fail_if_problems changed
+	show_repos
+	fetch_milestones oss $oss_repo $state
+	fetch_milestones commercial $commercial_repo $state
+	fail_if_problems changed
+
+	local -a sel f titles
+	sel=("${(@f)$(selected_rows)}")
+	sel=("${(@)sel:#}")
+	if (( ! ${#sel[@]} )); then
+		echo "No milestones matched." >&2
+		return 0
+	fi
+	if (( oneline )); then
+		local row
+		for row in "${sel[@]}"; do
+			f=("${(@ps:\t:)row}")
+			titles+=("${f[4]}")
+		done
+		print -r -- "${(j:,:)${(u)titles[@]}}"
+		return 0
+	fi
+	local w=5 row
+	for row in "${sel[@]}"; do
+		f=("${(@ps:\t:)row}")
+		(( ${#f[4]} > w )) && w=${#f[4]}
+	done
+	echo >&2
+	printf "%-10s  %-${w}s  %-6s  %-10s  %4s  %6s\n" REPO TITLE STATE DUE OPEN CLOSED
+	for row in "${sel[@]}"; do
+		f=("${(@ps:\t:)row}")
+		printf "%-10s  %-${w}s  %-6s  %-10s  %4s  %6s\n" "${f[1]}" "${f[4]}" "${f[5]}" "${f[6]:--}" "${f[7]}" "${f[8]}"
+	done
+}
+
+cmd_create() {
+	local label repo t row
+	local -a f targets
+	[[ ${#oss_titles[@]} -gt 0 ]] && need_repo oss
+	[[ ${#commercial_titles[@]} -gt 0 ]] && need_repo commercial
+	fail_if_problems created
+
+	for label in oss commercial; do
+		repo=${(P)${:-${label}_repo}}
+		targets=("${(@P)${:-${label}_titles}}")
+		(( ${#targets[@]} )) || continue
+		(( ${#${(u)targets[@]}} == ${#targets[@]} )) || problem "$label: duplicate titles in the list"
+		fetch_milestones $label $repo all
+	done
+	for row in "${rows[@]}"; do
+		f=("${(@ps:\t:)row}")
+		if (( ${${(P)${:-${f[1]}_titles}}[(Ie)${f[4]}]} )); then
+			problem "${f[1]}: milestone '${f[4]}' already exists (${f[5]})"
+		fi
+	done
+	fail_if_problems created
+	show_repos
+
+	for t in "${oss_titles[@]}"; do
+		cmds+=("gh api repos/$oss_repo/milestones -f title=${(q)t} -f due_on=${new_date}T00:00:00Z")
+	done
+	for t in "${commercial_titles[@]}"; do
+		cmds+=("gh api repos/$commercial_repo/milestones -f title=${(q)t} -f due_on=${new_date}T00:00:00Z")
+	done
+	if (( dry_run )); then
+		echo "Dry run, nothing was created. Checked open and closed milestones in each target repository: no conflicts."
+		echo "Would run:"
+		print_cmds
+		return 0
+	fi
+	run_cmds
+	echo "Created ${#cmds[@]} milestone(s) with due date $new_date."
+}
+
+cmd_set_due_date() {
+	need_repo oss; need_repo commercial
+	fail_if_problems changed
+	show_repos
+	fetch_milestones oss $oss_repo $state
+	fetch_milestones commercial $commercial_repo $state
+	fail_if_problems changed
+
+	local -a sel f
+	local row t found
+	sel=("${(@f)$(selected_rows)}")
+	sel=("${(@)sel:#}")
+	for t in "${title_args[@]}"; do
+		found=0
+		for row in "${sel[@]}"; do
+			f=("${(@ps:\t:)row}")
+			[[ ${f[4]} == $t ]] && found=1
+		done
+		(( found )) || problem "milestone '$t' not found in either repository"
+	done
+	(( ${#sel[@]} )) || problem "No milestones matched"
+	fail_if_problems changed
+
+	for row in "${sel[@]}"; do
+		f=("${(@ps:\t:)row}")
+		cmds+=("gh api -X PATCH repos/${f[2]}/milestones/${f[3]} -f due_on=${new_date}T00:00:00Z")
+		print -r -- "${f[1]} ${f[4]}: ${f[6]:-no due date} -> $new_date" >&2
+	done
+	if (( dry_run )); then
+		echo "Dry run, nothing was changed."
+		echo "Would run:"
+		print_cmds
+		return 0
+	fi
+	run_cmds
+	echo "Updated ${#cmds[@]} milestone(s) to due date $new_date."
+}
+
+resolve_repos
+fail_if_problems changed
+case $subcommand in
+	list) cmd_list ;;
+	create) cmd_create ;;
+	set-due-date) cmd_set_due_date ;;
+esac

@@ -1,0 +1,125 @@
+= gh-milestones
+
+A zsh plugin that uses the `gh` CLI to list, create and re-date the milestones of an OSS repository (`<org>/<name>`) and its commercial repository (`<org>/<name>-commercial`), and to print milestone names on one line for the `--releases` option of the link:../git-branches[git-branches] plugins.
+
+== Features
+
+* `gh-milestones` lists the open milestones of both repositories
+* Repositories are discovered from the git remotes, and can be overridden with `--oss-repo` and `--commercial-repo`
+* `--due GLOB` and `--this-month` select milestones by due date
+* `--oneline` prints the unique titles separated by commas on one line, ready for `--releases`
+* `create` creates milestones in the OSS repository, the commercial repository, or both, after checking that none of them exists (open or closed)
+* `set-due-date` sets the due date on the milestones with the given titles in both repositories
+* `--dry-run` validates and prints the exact `gh` commands that would run, and changes nothing
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins gh-milestones
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+The plugin defines two aliases:
+
+[%header,cols="1,4"]
+|===
+| Alias | Expands to
+| `ghm` | `gh-milestones`
+| `ghmr` | `gh-milestones list --this-month --oneline`
+|===
+
+Extra arguments are passed through, so `ghmr --due '2026-11-*'` works.
+
+[source,bash]
+----
+git branches-fetch --releases "$(ghmr)"   # --releases 7.0.1,7.1.0-M1
+----
+
+== Repositories
+
+The OSS repository is the first of:
+
+. `--oss-repo ORG/NAME`
+. the `oss` remote
+. the `origin` remote
+
+The commercial repository is the first of:
+
+. `--commercial-repo ORG/NAME`
+. the OSS repository name plus `-commercial`, when `--oss-repo` was given
+. the `commercial` remote
+. the OSS repository name plus `-commercial`
+
+Both are printed to stderr with how they were found. A git repository is only needed when a remote is used.
+
+== Usage
+
+[source,bash]
+----
+gh-milestones [list|create|set-due-date] [OPTIONS]
+----
+
+[%header,cols="3,6"]
+|===
+| Command | Description
+| `list` | List milestones from both repositories. This is the default.
+| `create [--oss TITLE...] [--commercial TITLE...] --due DATE` | Create milestones. A title in both lists is created in both repositories. One `--due` applies to all of them.
+| `set-due-date DATE TITLE...` | Set the due date (`YYYY-MM-DD`) on the milestones with these titles, open or closed, in both repositories. At least one title is required and no filters are allowed.
+|===
+
+[%header,cols="3,6"]
+|===
+| Option | Description
+| `--oss-repo ORG/NAME` | The OSS repository.
+| `--commercial-repo ORG/NAME` | The commercial repository.
+| `--state open\|closed\|all` | `list` only. Which milestones to select. Default `open`.
+| `--due GLOB` | `list` only. Select by due date, for example `'2026-10-*'`. Repeatable, any match wins. A milestone without a due date never matches. With `create`, `--due` is the date to set instead.
+| `--this-month` | `list` only. The same as `--due 'YYYY-MM-*'` for the current month.
+| `--oneline` | `list` only. Print the unique titles separated by commas on one line.
+| `--dry-run`, `-n` | `create` and `set-due-date` only. Validate and print the `gh` commands without running them.
+| `--help`, `-h` | Display the help message.
+|===
+
+Due dates are matched on the UTC date. GitHub stores them as UTC timestamps, and `create` and `set-due-date` send `<date>T00:00:00Z`, so a US timezone may display the previous day on github.com.
+
+== Validation
+
+`create` and `set-due-date` check everything first, report all problems together, and change nothing if there is any.
+
+* `create`: no title may already exist, open or closed, in the repository it is created in, and a list may not repeat a title
+* `set-due-date`: at least one title is required, and every title must exist in at least one of the repositories (a title missing from one repository is skipped there)
+
+== Examples
+
+[source,text]
+----
+$ gh-milestones
+oss: acme/proj (remote oss)
+commercial: acme/proj-commercial (remote commercial)
+
+REPO        TITLE     STATE  DUE         OPEN  CLOSED
+oss         7.0.1     open   2026-10-20     4       9
+oss         7.1.0-M1  open   2026-10-27    12       2
+commercial  7.0.1     open   2026-10-20     1       3
+
+$ ghmr
+7.0.1
+
+$ gh-milestones create --oss 7.0.1 7.0.2 --commercial 7.0.1 --due 2026-11-17 -n
+Dry run, nothing was created. Checked open and closed milestones in each target repository: no conflicts.
+Would run:
+  gh api repos/acme/proj/milestones -f title=7.0.1 -f due_on=2026-11-17T00:00:00Z
+  gh api repos/acme/proj/milestones -f title=7.0.2 -f due_on=2026-11-17T00:00:00Z
+  gh api repos/acme/proj-commercial/milestones -f title=7.0.1 -f due_on=2026-11-17T00:00:00Z
+----
+
+== Tests
+
+[source,bash]
+----
+zsh test/test.sh [name-filter]
+----
+
+The tests put a stub `gh` first on `PATH`, so nothing touches GitHub.
