@@ -12,6 +12,7 @@ fail=0
 out=""
 rc=0
 M=$(date +%Y-%m)
+NM=$(date -v+1m +%Y-%m 2>/dev/null || date -d "$(date +%Y-%m-01) +1 month" +%Y-%m)
 
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
@@ -180,6 +181,33 @@ t "list: --this-month" '
 t "list: --next-month matches next month only, and combines with --this-month" '
 	run list --next-month; expect_rc 0; expect_out "No milestones matched"
 	run list --this-month --next-month; expect_rc 0; expect_out "7.0.1"
+'
+
+t "list: --oss-only and --commercial-only" '
+	run_stdout list --oss-only --oneline; expect_rc 0; expect_eq "7.0.1,7.1.0-M1,7.2.0"
+	run_stdout list --commercial-only --oneline; expect_rc 0; expect_eq "7.0.1"
+	run list --oss-only --commercial-only; expect_rc 1; expect_out "cannot be combined"
+	run create --oss-only; expect_rc 1; expect_out "only valid with list"
+	run set-due-date --commercial-only 2026-12-01 7.0.1; expect_rc 1; expect_out "only valid with list"
+'
+
+t "list: --hotfixes keeps only 4 part commercial titles and does not touch OSS" '
+	local tab=$'"'"'\t'"'"'
+	print -r -- "7${tab}7.0.1.1${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0
+8${tab}7.0.2${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0
+9${tab}7.0.3.RC1${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0" >> $FIX/acme_proj-commercial.tsv
+	run_stdout list --commercial-only --hotfixes --oneline; expect_rc 0; expect_eq "7.0.1.1"
+	run_stdout list --oss-only --hotfixes --oneline; expect_rc 0; expect_eq "7.0.1,7.1.0-M1,7.2.0"
+	run_stdout list --hotfixes --oneline; expect_rc 0; expect_eq "7.0.1,7.1.0-M1,7.2.0,7.0.1.1"
+	run create --hotfixes; expect_rc 1; expect_out "only valid with list"
+'
+
+t "ghmr: OSS this month plus commercial hotfixes next month" '
+	local tab=$'"'"'\t'"'"'
+	print -r -- "7${tab}7.0.1.1${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0
+8${tab}7.0.2${tab}open${tab}${NM}-10T07:00:00Z${tab}1${tab}0" >> $FIX/acme_proj-commercial.tsv
+	out=$(cd $W && zsh -c "source ${SCRIPT:h}/gh-milestones.plugin.zsh; ghmr" 2>/dev/null)
+	expect_eq "7.0.1,7.0.1.1"
 '
 
 t "list: nothing matched is not an error" '

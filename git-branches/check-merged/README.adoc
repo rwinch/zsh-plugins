@@ -21,7 +21,7 @@ antigen bundle rwinch/zsh-plugins git-branches/check-merged
 
 The plugin also defines the alias `gbbc` for `git-branches-check-merged`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
-To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line) and the `ghmr` alias of link:../../gh-milestones[gh-milestones] (this month's milestones as a comma separated list for `--releases`):
+To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line) and the `ghmr` function of link:../../gh-milestones[gh-milestones] (this month's OSS milestones and next month's commercial hotfixes as a comma separated list for `--releases`):
 
 [source,bash]
 ----
