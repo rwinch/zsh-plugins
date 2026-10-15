@@ -40,6 +40,10 @@ antigen theme robbyrussell
 antigen apply
 ----
 
+== Plugin groups
+
+* link:git-branches[git-branches] - fetch, pull, reset-to-upstream, check-merged, merge-forward and release for several branches at once. `antigen bundle rwinch/zsh-plugins git-branches` loads all of them, and `git-branches/<name>` loads one.
+
 == Development
 
 If you want to load local changes you can run something like this:
