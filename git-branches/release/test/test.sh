@@ -106,30 +106,34 @@ t() {
 
 # ---------------------------------------------------------------------------
 t "args: no args, unknown option, --help" '
-	run; expect_rc 1; expect_out "At least one release version"
-	run -x 7.0.1; expect_rc 1; expect_out "Unknown option"
-	run --releases 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run; expect_rc 1; expect_out "A command is required \(rebase\)"
+	run 7.0.1; expect_rc 1; expect_out "A command is required \(rebase\)"
+	run foo 7.0.1; expect_rc 1; expect_out "Unknown command .foo."
+	run rebase; expect_rc 1; expect_out "At least one release version"
+	run -x rebase 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run --releases rebase 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run -n rebase 7.0.1; expect_rc 0
 	run --help; expect_rc 0; expect_out "^Usage: git-branches-release"
 '
 
 t "args: release version format and base rules" '
-	run 7.0; expect_rc 1; expect_out "Invalid release version"
-	run 7.1.1-RC1; expect_rc 1; expect_out "patch 0"
-	run 7.0.1,7.0.2; expect_rc 1; expect_out "at most one per base"
-	run 7.0.1.1,7.0.2.1; expect_rc 1; expect_out "at most one per base"
-	run 7.0.1,7.0.1; expect_rc 1; expect_out "more than once"
+	run rebase 7.0; expect_rc 1; expect_out "Invalid release version"
+	run rebase 7.1.1-RC1; expect_rc 1; expect_out "patch 0"
+	run rebase 7.0.1,7.0.2; expect_rc 1; expect_out "at most one per base"
+	run rebase 7.0.1.1,7.0.2.1; expect_rc 1; expect_out "at most one per base"
+	run rebase 7.0.1,7.0.1; expect_rc 1; expect_out "more than once"
 '
 
 t "args: versions may be separate arguments" '
-	run -n 7.0.1 7.0.1.1; expect_rc 0
+	run rebase -n 7.0.1 7.0.1.1; expect_rc 0
 	expect_out "Everything is up to date"
 '
 
 t "up to date: one-liner, also on a dry run" '
-	run 7.0.1,7.0.1.1; expect_rc 0
+	run rebase 7.0.1,7.0.1.1; expect_rc 0
 	[[ "$out" == *"Everything is up to date, nothing to rebase."* ]]
 	reject_out "Rebasing"
-	run -n 7.0.1; expect_rc 0
+	run rebase -n 7.0.1; expect_rc 0
 	expect_out "Everything is up to date, nothing to rebase."
 '
 
@@ -137,7 +141,7 @@ t "rebase: release becomes the disclosure branch plus release-only commits" '
 	advance disclosure/frozen/7.0.x
 	advance disclosure/active/7.0.x
 	local old=$(git -C $W rev-parse commercial/release/7.0.1)
-	run 7.0.1,7.0.1.1; expect_rc 0
+	run rebase 7.0.1,7.0.1.1; expect_rc 0
 	for r in release/7.0.1 release/7.0.1.1; do
 		has_file $r fix.txt && has_file $r LICENSE || { echo "    $r wrong"; return 1 }
 	done
@@ -155,7 +159,7 @@ t "rebase: release becomes the disclosure branch plus release-only commits" '
 t "rebase: dry run changes nothing and exits 0" '
 	advance disclosure/frozen/7.0.x
 	local before=$(git -C $W for-each-ref --format="%(refname) %(objectname)")
-	run -n 7.0.1; expect_rc 0
+	run rebase -n 7.0.1; expect_rc 0
 	expect_out "release/7.0.1 +on disclosure/frozen/7.0.x +would rebase 1 commit\(s\) \[commercial\]"
 	expect_out "Dry run, nothing changed\."
 	reject_out "git push"
@@ -165,74 +169,52 @@ t "rebase: dry run changes nothing and exits 0" '
 
 t "rebase: up to date once the force push happened" '
 	advance disclosure/frozen/7.0.x
-	run 7.0.1; expect_rc 0
+	run rebase 7.0.1; expect_rc 0
 	git -C $W push -q -f commercial release/7.0.1
-	run 7.0.1; expect_rc 0
+	run rebase 7.0.1; expect_rc 0
 	expect_out "Everything is up to date, nothing to rebase."
 '
 
-t "create: missing release is created from its base, pushed plainly" '
+t "rebase: missing release on the remote is an error" '
 	git -C $R/commercial.git branch -q -D release/7.1.0
-	run -n 7.1.0; expect_rc 0
-	expect_out "release/7.1.0 +on disclosure/frozen/main +would create from commercial/disclosure/frozen/main"
-	expect_out "no 7.1.x branch, newest generation"
-	run 7.1.0; expect_rc 0
-	expect_out "Creating release/7.1.0 from commercial/disclosure/frozen/main \.\.\. done"
-	[[ $(git -C $W rev-parse release/7.1.0) == $(git -C $W rev-parse disclosure/frozen/main) ]]
-	lacks_file release/7.1.0 LICENSE
-	expect_out "git push --atomic commercial"
-	expect_out "^    release/7.1.0$"
-	reject_out "force-with-lease"
-	reject_out "\+release"
-	[[ $(branch_of $W) == 7.0.x ]]
-'
-
-t "create: a missing release next to a rebuilt one, lease only for the rebuilt one" '
-	git -C $R/commercial.git branch -q -D release/7.1.0
-	advance disclosure/frozen/7.0.x
-	local old=$(git -C $W rev-parse commercial/release/7.0.1)
-	run 7.0.1,7.1.0; expect_rc 0
-	expect_out "^    \+release/7.0.1 release/7.1.0 --force-with-lease=release/7.0.1:$old$"
-	reject_out "force-with-lease=release/7.1.0"
-'
-
-t "create: local release without a remote one is an error" '
-	git -C $R/commercial.git branch -q -D release/7.1.0
+	run rebase -n 7.1.0; expect_rc 1
+	expect_out "release/7.1.0: does not exist on .commercial., so there is nothing to rebase"
 	git -C $W branch -q release/7.1.0 disclosure/frozen/main
-	run -n 7.1.0; expect_rc 1
-	expect_out "release/7.1.0: exists locally but not on .commercial."
+	run rebase -n 7.1.0; expect_rc 1
+	expect_out "release/7.1.0: does not exist on .commercial."
 '
 
 t "mapping: main fallback, skips and several newer generations" '
-	run -n 7.1.0; expect_rc 0
-	run -n 7.2.0; expect_rc 1; expect_out "7.2.0: no disclosure/\*/7.2.x"
-	run -n 7.1.0,8.0.0; expect_rc 1; expect_out "several newer generations"
-	run -n 6.5.0; expect_rc 1; expect_out "not the generation after the newest"
-	run -n 7.1.0-RC1; expect_rc 0
-	expect_out "release/7.1.0-RC1 .*would create from commercial/disclosure/frozen/main"
+	run rebase -n 7.1.0; expect_rc 0
+	run rebase -n 7.2.0; expect_rc 1; expect_out "7.2.0: no disclosure/\*/7.2.x"
+	run rebase -n 7.1.0,8.0.0; expect_rc 1; expect_out "several newer generations"
+	run rebase -n 6.5.0; expect_rc 1; expect_out "not the generation after the newest"
+	run rebase -n 7.1.0-RC1; expect_rc 1
+	expect_out "release/7.1.0-RC1: does not exist on .commercial."
+	reject_out "cannot be mapped|no disclosure"
 '
 
 t "validation: base branch behind, ahead and missing" '
 	commit_on $S disclosure/frozen/7.0.x up.txt; git -C $S push -q commercial disclosure/frozen/7.0.x
-	run -n 7.0.1; expect_rc 1
+	run rebase -n 7.0.1; expect_rc 1
 	expect_out "disclosure/frozen/7.0.x: behind commercial/disclosure/frozen/7.0.x by 1"
 	expect_out "git-branches-pull"
 	git -C $W branch -q -D disclosure/active/7.0.x
-	run -n 7.0.1.1; expect_rc 1
+	run rebase -n 7.0.1.1; expect_rc 1
 	expect_out "disclosure/active/7.0.x: branch does not exist locally"
 '
 
 t "validation: base branch ahead of its upstream" '
 	commit_on $W disclosure/frozen/7.0.x local.txt
 	git -C $W checkout -q 7.0.x
-	run -n 7.0.1; expect_rc 1
+	run rebase -n 7.0.1; expect_rc 1
 	expect_out "disclosure/frozen/7.0.x: ahead of commercial/disclosure/frozen/7.0.x by 1 commit\(s\), push it first"
 '
 
 t "validation: dirty worktree and missing upstream together" '
 	echo y > $W/untracked.txt
 	git -C $W branch -q --unset-upstream disclosure/active/7.0.x
-	run -n 7.0.1,7.0.1.1; expect_rc 1
+	run rebase -n 7.0.1,7.0.1.1; expect_rc 1
 	expect_out "problem"
 	expect_out "working tree not clean"
 	expect_out "disclosure/active/7.0.x: no upstream"
@@ -247,7 +229,7 @@ t "validation: merge commit among release-only commits is an error" '
 	git -C $W merge -q --no-ff side -m mergecommit > /dev/null
 	git -C $W push -q commercial tmp:release/7.0.1
 	git -C $W checkout -q 7.0.x; git -C $W branch -q -D tmp side
-	run -n 7.0.1; expect_rc 1
+	run rebase -n 7.0.1; expect_rc 1
 	expect_out "merge commit"
 '
 
@@ -256,7 +238,7 @@ t "validation: unexpected local release branch is an error" '
 	git -C $W checkout -q release/7.0.1
 	commit_on $W release/7.0.1 local.txt
 	git -C $W checkout -q 7.0.x
-	run -n 7.0.1; expect_rc 1
+	run rebase -n 7.0.1; expect_rc 1
 	expect_out "local branch differs"
 '
 
@@ -266,7 +248,7 @@ t "conflict: prompt appears and resume works" '
 	# The stdin side waits for the conflict, resolves it, then presses Enter.
 	set +e
 	out=$( ( for i in {1..150}; do [[ -d $W/.git/rebase-merge || -d $W/.git/rebase-apply ]] && break; sleep 0.2; done
-		echo resolved > $W/LICENSE; git -C $W add -A; git -C $W rebase --continue >/dev/null 2>&1; sleep 1; echo; sleep 5 ) | script -q /dev/null zsh -c "cd $W && $SCRIPT 7.0.1" 2>&1 )
+		echo resolved > $W/LICENSE; git -C $W add -A; git -C $W rebase --continue >/dev/null 2>&1; sleep 1; echo; sleep 5 ) | script -q /dev/null zsh -c "cd $W && $SCRIPT rebase 7.0.1" 2>&1 )
 	set -e
 	expect_out "Rebase of .release/7.0.1. onto .disclosure/frozen/7.0.x. stopped"
 	expect_out "Rebase finished"

@@ -12,7 +12,7 @@ They share the command prefix `git-branches-`, so `git branches-<TAB>` lists the
 |link:reset-to-upstream[git-branches-reset-to-upstream] |`gbbrtu` |Hard reset the branches to their upstream
 |link:check-merged[git-branches-check-merged] |`gbbc` |Check that a chain of branches is merged forward
 |link:merge-forward[git-branches-merge-forward] |`gbbm` |Merge a chain of branches forward
-|link:release[git-branches-release] |`gbbr` |Rebuild or create `release/<version>` branches on their disclosure base
+|link:release[git-branches-release] |`gbbr` |Rebuild `release/<version>` branches on their disclosure base
 |===
 
 A typical run goes fetch, pull (or reset-to-upstream), check-merged, merge-forward, push, then release.
@@ -47,7 +47,7 @@ Two aliases from other plugins print the arguments on one line:
 ----
 gbbf $(svaob) --releases $(ghmr)
 gbbm $(svaob)
-gbbr $(ghmr)
+gbbr rebase $(ghmr)
 ----
 
 [#aliases]

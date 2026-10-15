@@ -1,6 +1,7 @@
 #!/bin/zsh
 
-# ---- options ----
+# ---- command and options ----
+command=""               # rebase (first positional)
 dry_run=0                # --dry-run
 pause_after_release=0    # --pause
 releases_arg=""          # V1,V2 (positional, comma separated)
@@ -15,8 +16,7 @@ typeset -a rel_role      # frozen | active
 typeset -a rel_gen       # <major>.<minor>
 typeset -a rel_base      # disclosure branch the release is based on
 typeset -a rel_note      # mapping note (main fallback)
-typeset -a rel_kind      # rebase | create
-typeset -a rel_will      # 1 when the release would be rewritten or created
+typeset -a rel_will      # 1 when the release would be rewritten
 typeset -a rel_lease     # sha of the remote release branch before rewriting
 
 typeset -a all_branches  # the base branches taking part
@@ -33,14 +33,16 @@ nl=$'\n'
 
 usage() {
 	cat <<EOF
-Usage: git-branches-release [OPTIONS] VERSION[,VERSION ...]
+Usage: git-branches-release [OPTIONS] rebase VERSION[,VERSION ...]
 
-Rebuild or create release/<version> branches. An existing release branch becomes
-its base disclosure branch plus the commits that are only on the remote release
-branch (git rebase --onto), so it needs a force push. A release branch that does
-not exist yet is created from its base disclosure branch. A hotfix version
-(7.0.1.1) is based on disclosure/active/<major>.<minor>.x, anything else on
-disclosure/frozen/<major>.<minor>.x.
+Commands:
+  rebase               Rebuild existing release/<version> branches on their base
+                       disclosure branch plus the commits that are only on the
+                       remote release branch (git rebase --onto). Needs a force push.
+                       A release branch that does not exist is an error.
+
+A hotfix version (7.0.1.1) is based on disclosure/active/<major>.<minor>.x, anything
+else on disclosure/frozen/<major>.<minor>.x.
 
 Everything is validated before anything changes, and all problems are reported
 together: every base branch exists locally, has an upstream, has a clean worktree
@@ -62,9 +64,9 @@ VERSIONS:
   branch (one hotfix and one non-hotfix per generation).
 
 EXAMPLES:
-  git-branches-release 7.0.1,7.0.1.1
-  git-branches-release --dry-run 7.0.1 7.1.0-RC1
-  git-branches-release -n 7.1.0
+  git-branches-release rebase 7.0.1,7.0.1.1
+  git-branches-release rebase --dry-run 7.0.1 7.0.2
+  git-branches-release rebase -n 7.0.1
   git-branches-release \$(ghmr)   # ghmr (gh-milestones): this month's OSS milestones and next month's commercial hotfixes, comma separated
 
 REQUIREMENTS:
@@ -229,7 +231,6 @@ parse_releases() {
 		rel_gen+=("$major.$minor")
 		rel_base+=("")
 		rel_note+=("")
-		rel_kind+=(rebase)
 		rel_will+=(0)
 		rel_lease+=("")
 	done
@@ -347,8 +348,7 @@ validate_local() {
 	done
 }
 
-# Upstream refs exist. Decides for every release whether it is rebuilt (it
-# exists on the remote of its base) or created (it exists nowhere).
+# Upstream refs exist, and every release exists on the remote of its base.
 validate_remote_refs() {
 	local b i rb rr base
 	for b in "${all_branches[@]}"; do
@@ -364,14 +364,9 @@ validate_remote_refs() {
 		[[ -z "${up_remote[$base]}" ]] && continue
 		rr="${up_remote[$base]}"
 		if ! git show-ref --verify --quiet "refs/remotes/$rr/$rb"; then
-			if branch_exists "$rb"; then
-				problem "$rb: exists locally but not on '$rr' (delete the local branch to have it created from $base, or push it first)"
-			else
-				rel_kind[$i]=create
-			fi
+			problem "$rb: does not exist on '$rr', so there is nothing to rebase"
 			continue
 		fi
-		rel_kind[$i]=rebase
 		if git rev-list --merges "refs/remotes/$rr/$rb" "^refs/remotes/${up_remote[$base]}/${up_branch[$base]}" | grep -q .; then
 			problem "$rb: has merge commit(s) that are not on $(upstream_display $base), which a rebase would flatten:${nl}$(git rev-list --merges --oneline "refs/remotes/$rr/$rb" "^refs/remotes/${up_remote[$base]}/${up_branch[$base]}")"
 		fi
@@ -412,10 +407,6 @@ check_up_to_date() {
 evaluate_plan() {
 	local i rr base rb
 	for (( i = 1; i <= ${#rel_version[@]}; i++ )); do
-		if [[ "${rel_kind[$i]}" == create ]]; then
-			rel_will[$i]=1
-			continue
-		fi
 		base="${rel_base[$i]}"
 		rb="release/${rel_version[$i]}"
 		rr="${up_remote[$base]}"
@@ -447,9 +438,7 @@ print_plan() {
 		base="${rel_base[$i]}"
 		rb="release/${rel_version[$i]}"
 		rr="${up_remote[$base]}"
-		if [[ "${rel_kind[$i]}" == create ]]; then
-			printf '  %-*s on %-*s  would create from %s\n' "$w" "$rb" "$wb" "$base" "$(upstream_display $base)"
-		elif [[ "${rel_will[$i]}" -eq 1 ]]; then
+		if [[ "${rel_will[$i]}" -eq 1 ]]; then
 			count=$(git rev-list --count "refs/remotes/$rr/$rb" "^refs/remotes/$rr/${up_branch[$base]}")
 			printf '  %-*s on %-*s  would rebase %s commit(s) [%s]\n' "$w" "$rb" "$wb" "$base" "$count" "$rr"
 		else
@@ -459,8 +448,8 @@ print_plan() {
 	done
 }
 
-# One 'git push --atomic' per remote. A created release is pushed plainly, a
-# rebuilt one is forced with a lease on the sha it had when it was fetched.
+# One 'git push --atomic' per remote. Every rebuilt release is forced with a
+# lease on the sha it had when it was fetched.
 print_push_commands() {
 	local -a remotes refs
 	local i rb r base
@@ -476,14 +465,10 @@ print_push_commands() {
 			[[ "${rel_will[$i]}" -eq 1 ]] || continue
 			[[ "${up_remote[${rel_base[$i]}]}" == "$r" ]] || continue
 			rb="release/${rel_version[$i]}"
-			if [[ "${rel_kind[$i]}" == create ]]; then
-				refs+=("$rb")
-			else
-				refs+=("+$rb")
-			fi
+			refs+=("+$rb")
 		done
 		for (( i = 1; i <= ${#rel_version[@]}; i++ )); do
-			[[ "${rel_will[$i]}" -eq 1 && "${rel_kind[$i]}" == rebase ]] || continue
+			[[ "${rel_will[$i]}" -eq 1 ]] || continue
 			[[ "${up_remote[${rel_base[$i]}]}" == "$r" ]] || continue
 			rb="release/${rel_version[$i]}"
 			refs+=("--force-with-lease=${rb}:${rel_lease[$i]}")
@@ -553,19 +538,6 @@ pause_for_validation() {
 # ---------------------------------------------------------------------------
 # Updating releases
 # ---------------------------------------------------------------------------
-create_release() {
-	local i="$1"
-	local rb="release/${rel_version[$i]}" base="${rel_base[$i]}"
-
-	printf 'Creating %s from %s ... ' "$rb" "$(upstream_display $base)"
-	if ! git branch "$rb" "refs/heads/$base" > /dev/null 2>&1; then
-		echo ""
-		echo "Error: cannot create local branch '$rb' from '$base'" >&2
-		exit 1
-	fi
-	echo "done"
-}
-
 update_release() {
 	local i="$1"
 	local rb="release/${rel_version[$i]}" base="${rel_base[$i]}"
@@ -573,14 +545,6 @@ update_release() {
 	local rref="refs/remotes/$rr/$rb"
 	local bref="refs/remotes/$rr/${up_branch[$base]}"
 	local dir rc
-
-	if [[ "${rel_kind[$i]}" == create ]]; then
-		create_release "$i"
-		if [[ $pause_after_release -eq 1 ]]; then
-			pause_for_validation "$invoke_dir" "creating '$rb' from '$base'"
-		fi
-		return 0
-	fi
 
 	if git merge-base --is-ancestor "refs/heads/$base" "$rref"; then
 		echo "✓ '$rb' already contains '$base'"
@@ -664,13 +628,24 @@ while [[ $# -gt 0 ]]; do
 		--pause|-P) pause_after_release=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
-		*) version_args+=("$1"); shift ;;
+		*)
+			if [[ -z "$command" ]]; then
+				case $1 in
+					rebase) command=$1 ;;
+					[0-9]*) usage_error "A command is required (rebase)" ;;
+					*) usage_error "Unknown command '$1' (expected: rebase)" ;;
+				esac
+			else
+				version_args+=("$1")
+			fi
+			shift ;;
 	esac
 done
 
 # ---------------------------------------------------------------------------
 # Argument checks (no git yet)
 # ---------------------------------------------------------------------------
+[[ -n "$command" ]] || usage_error "A command is required (rebase)"
 [[ ${#version_args[@]} -ge 1 ]] || usage_error "At least one release version is required (e.g. 7.0.1,7.0.1.1)"
 releases_arg="${(j:,:)version_args}"
 parse_releases
@@ -705,7 +680,7 @@ done
 validate_local
 fail_if_problems
 
-# 2. Remote refs: upstreams exist, release branches rebuilt or created.
+# 2. Remote refs: upstreams exist, every release exists on the remote.
 validate_remote_refs
 fail_if_problems
 
@@ -728,7 +703,7 @@ if [[ $dry_run -eq 1 ]]; then
 	exit 0
 fi
 
-# 5. Rebuild or create the releases.
+# 5. Rebuild the releases.
 trap on_abort INT
 echo ""
 for (( i = 1; i <= ${#rel_version[@]}; i++ )); do
