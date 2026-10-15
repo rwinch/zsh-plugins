@@ -1,0 +1,85 @@
+= git-check-merged
+
+A zsh plugin that checks that a chain of branches is merged forward, on the local branches, on their remote tracking equivalents, or both. It takes the same chain, `--disclosures` and `--releases` arguments as link:../git-merge-forward[git-merge-forward], link:../git-pull-branches[git-pull-branches] and link:../git-reset-upstream[git-reset-upstream].
+
+== Features
+
+* `git check-merged 7.0.x 7.1.x main` checks that `7.0.x` is contained in `7.1.x`, and `7.1.x` in `main`
+* `--disclosures` checks the same hops as `git-merge-forward --disclosures`
+* `--releases` checks that `release/<version>` contains its base disclosure branch
+* `--local` (the default) checks the local branches, `--remote` checks their upstream refs, and both can be combined
+* Read-only: nothing is fetched and nothing is changed, and worktrees may be dirty. Run `git fetch` first to check what is on the remote now.
+* Exits 0 when everything is merged and 1 otherwise, and lists the commits that are not merged
+* Problems (missing branch, missing upstream, missing remote ref) are collected and reported together
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-check-merged
+----
+
+The plugin also defines the alias `gcmg` for `git-check-merged`.
+
+== Usage
+
+[source,bash]
+----
+git check-merged [OPTIONS] BRANCH1 BRANCH2 [BRANCH3 ...]
+git check-merged [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git check-merged [OPTIONS] --releases VERSION[,VERSION ...]
+----
+
+|===
+|Option |Description
+
+|`--local`, `-l`
+|Check the local branches. This is the default when neither `--local` nor `--remote` is given.
+
+|`--remote`, `-R`
+|Check the upstream (remote tracking) branches, as of the last fetch. Can be combined with `--local`.
+
+|`--disclosures`, `-d`
+|Arguments are OSS generations. Checks the hops `git-merge-forward --disclosures` would merge. `--disclosure` is accepted too.
+
+|`--releases`, `-r LIST`
+|Comma separated release versions, for example `7.0.1,7.0.1.1,7.1.0-RC1`. A hotfix version is based on `disclosure/active/<major>.<minor>.x`, anything else on `disclosure/frozen/<major>.<minor>.x`.
+
+|`--help`, `-h`
+|Show help.
+|===
+
+== Output
+
+[source,text]
+----
+$ git check-merged --disclosures 7.0.x main --releases 7.0.1
+Checking local branches:
+  (1) 7.0.x                   -> main                      merged
+  (3) main                    -> disclosure/frozen/main    NOT MERGED, 2 commit(s)
+        git log --oneline disclosure/frozen/main..main
+        a1b2c3d Fix thing
+        e4f5a6b Other fix
+Releases:
+  release/7.0.1 contains disclosure/frozen/7.0.x  merged
+
+Error: 1 of 7 check(s) not merged (local).
+----
+
+With `--remote` the names are the upstream refs (`oss/7.0.x -> oss/main`). A branch that is not merged lists up to five of the commits.
+
+== Examples
+
+[source,bash]
+----
+git check-merged 7.0.x 7.1.x main
+git check-merged --remote --disclosures 7.0.x main
+git check-merged -l -R -d 7.0.x main -r 7.0.1.1
+----
+
+== Tests
+
+[source,bash]
+----
+zsh test/test.sh
+----
