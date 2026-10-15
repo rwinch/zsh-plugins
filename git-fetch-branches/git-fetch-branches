@@ -1,0 +1,258 @@
+#!/bin/zsh
+
+# ---- options ----
+disclosures=0            # --disclosures
+releases_arg=""          # --releases V1,V2
+releases_given=0
+typeset -a args          # positional args, in order
+typeset -a release_branches
+
+typeset -a all_branches  # every branch to report, in order
+typeset -A up_remote     # branch -> remote of its upstream
+typeset -A up_branch     # branch -> branch name on that remote
+typeset -A b_state       # branch -> uptodate | behind | ahead | diverged | gone
+typeset -A b_note        # branch -> text shown in the report
+typeset -a problems
+
+ab_behind=0
+ab_ahead=0
+nl=$'\n'
+
+usage() {
+	cat <<EOF
+Usage: git-fetch-branches [OPTIONS] BRANCH1 [BRANCH2 ...]
+       git-fetch-branches [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-fetch-branches [OPTIONS] --releases VERSION[,VERSION ...]
+
+Fetch the remote of every given branch's tracked (upstream) branch, pruning
+branches deleted on the remote, then report how each branch compares to its
+upstream: up to date, behind, ahead, diverged or gone. Each remote is fetched
+once. No local branch, worktree or file is changed.
+
+Every branch must exist locally and have an upstream. All problems are
+reported together before anything is fetched. A diverged branch or an upstream
+that is gone is reported but is not an error.
+
+OPTIONS:
+  --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
+                       Each is reported together with disclosure/frozen/<generation>
+                       and disclosure/active/<generation>.
+  --releases, -r LIST  Comma separated release versions, e.g. 7.0.1,7.0.1.1,7.1.0-RC1.
+                       release/<version> is reported. Can be combined with the above.
+  --help, -h           Display this help message
+
+EXAMPLES:
+  git-fetch-branches 7.0.x main
+  git-fetch-branches --disclosures 7.0.x 7.1.x main
+  git-fetch-branches -d 7.0.x main -r 7.0.1.1
+
+REQUIREMENTS:
+  - Must be run from within a git repository
+  - Every branch needs an upstream (git branch --set-upstream-to=<remote>/<b> <b>)
+
+EOF
+}
+
+usage_error() {
+	echo "Error: $1" >&2
+	echo "Run 'git-fetch-branches --help' for usage." >&2
+	exit 1
+}
+
+problem() {
+	problems+=("$1")
+}
+
+fail_if_problems() {
+	[[ ${#problems[@]} -eq 0 ]] && return 0
+	local p first l
+	echo "Error: ${#problems[@]} problem(s) found:" >&2
+	for p in "${problems[@]}"; do
+		first=1
+		for l in "${(@f)p}"; do
+			if (( first )); then
+				echo "  - $l" >&2
+				first=0
+			else
+				echo "      $l" >&2
+			fi
+		done
+	done
+	exit 1
+}
+
+branch_exists() {
+	git show-ref --verify --quiet "refs/heads/$1"
+}
+
+upstream_display() {
+	echo "${up_remote[$1]}/${up_branch[$1]}"
+}
+
+add_branch() {
+	(( ${all_branches[(Ie)$1]} )) || all_branches+=("$1")
+}
+
+parse_releases() {
+	local -a items
+	local v patch pre
+	local -A seen
+	items=("${(@s:,:)releases_arg}")
+	for v in "${items[@]}"; do
+		if [[ ! "$v" =~ '^([0-9]+)\.([0-9]+)\.([0-9]+)(\.([0-9]+)|-(RC[0-9]+|M[0-9]+))?$' ]]; then
+			usage_error "Invalid release version '$v' (expected <major>.<minor>.<patch>, optionally .<hotfix> or -RC<n> or -M<n>)"
+		fi
+		patch="${match[3]}"; pre="${match[6]}"
+		if [[ -n "$pre" && "$patch" != 0 ]]; then
+			usage_error "Invalid release version '$v' (an RC or M version must have patch 0)"
+		fi
+		if (( ${+seen[$v]} )); then
+			usage_error "Release version '$v' is given more than once"
+		fi
+		seen[$v]=1
+		release_branches+=("release/$v")
+	done
+}
+
+# Branches exist and upstreams are set.
+validate_local() {
+	local b r m
+	for b in "${all_branches[@]}"; do
+		if ! branch_exists "$b"; then
+			problem "$b: branch does not exist locally${nl}git branch --track $b <remote>/$b"
+			continue
+		fi
+		r=$(git config "branch.$b.remote")
+		m=$(git config "branch.$b.merge")
+		if [[ -z "$r" || -z "$m" || "$r" == "." ]]; then
+			problem "$b: no upstream${nl}git branch --set-upstream-to=<remote>/$b $b"
+			continue
+		fi
+		up_remote[$b]="$r"
+		up_branch[$b]="${m#refs/heads/}"
+	done
+}
+
+evaluate() {
+	local b
+	for b in "${all_branches[@]}"; do
+		if ! git show-ref --verify --quiet "refs/remotes/$(upstream_display $b)"; then
+			b_state[$b]=gone; b_note[$b]="gone"
+			continue
+		fi
+		read ab_behind ab_ahead <<< "$(git rev-list --left-right --count "refs/remotes/$(upstream_display $b)...refs/heads/$b")"
+		if (( ab_ahead == 0 && ab_behind == 0 )); then
+			b_state[$b]=uptodate; b_note[$b]="up to date"
+		elif (( ab_ahead == 0 )); then
+			b_state[$b]=behind; b_note[$b]="behind $ab_behind"
+		elif (( ab_behind == 0 )); then
+			b_state[$b]=ahead; b_note[$b]="ahead $ab_ahead"
+		else
+			b_state[$b]=diverged; b_note[$b]="diverged ($ab_ahead local, $ab_behind upstream)"
+		fi
+	done
+}
+
+print_report() {
+	local b up
+	local w1=0 w2=0
+	for b in "${all_branches[@]}"; do
+		up=$(upstream_display $b)
+		(( ${#b} > w1 )) && w1=${#b}
+		(( ${#up} > w2 )) && w2=${#up}
+	done
+	echo ""
+	echo "Fetched (upstream state after fetch):"
+	for b in "${all_branches[@]}"; do
+		printf "  %-${w1}s  %-${w2}s  %s\n" "$b" "$(upstream_display $b)" "${b_note[$b]}"
+	done
+	echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--disclosures|--disclosure|-d) disclosures=1; shift ;;
+		--releases|-r)
+			if [[ -z "$2" || "$2" == -* ]]; then
+				usage_error "$1 requires a value (e.g. 7.0.1,7.0.1.1)"
+			fi
+			releases_arg="$2"
+			releases_given=1
+			shift 2
+			;;
+		--help|-h) usage; exit 0 ;;
+		-*) usage_error "Unknown option: $1" ;;
+		*) args+=("$1"); shift ;;
+	esac
+done
+
+if [[ ${#args[@]} -eq 0 && $releases_given -eq 0 ]]; then
+	usage_error "At least one branch is required (or use --releases)"
+fi
+
+typeset -A seen_arg
+for b in "${args[@]}"; do
+	if (( ${+seen_arg[$b]} )); then
+		usage_error "Branch '$b' is given more than once"
+	fi
+	seen_arg[$b]=1
+done
+
+[[ $releases_given -eq 1 ]] && parse_releases
+
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
+	exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Main flow
+# ---------------------------------------------------------------------------
+for b in "${args[@]}"; do
+	add_branch "$b"
+	if [[ $disclosures -eq 1 ]]; then
+		add_branch "disclosure/frozen/$b"
+		add_branch "disclosure/active/$b"
+	fi
+done
+for b in "${release_branches[@]}"; do
+	add_branch "$b"
+done
+
+validate_local
+fail_if_problems
+
+typeset -a fetch_remotes
+for b in "${all_branches[@]}"; do
+	(( ${fetch_remotes[(Ie)${up_remote[$b]}]} )) || fetch_remotes+=("${up_remote[$b]}")
+done
+for r in "${fetch_remotes[@]}"; do
+	echo "Fetching '$r'..."
+	git fetch --quiet --prune "$r" || problem "git fetch $r failed"
+done
+fail_if_problems
+
+evaluate
+print_report
+
+n_uptodate=0
+n_behind=0
+n_ahead=0
+n_diverged=0
+n_gone=0
+for b in "${all_branches[@]}"; do
+	case "${b_state[$b]}" in
+		uptodate) (( n_uptodate++ )) ;;
+		behind) (( n_behind++ )) ;;
+		ahead) (( n_ahead++ )) ;;
+		diverged) (( n_diverged++ )) ;;
+		gone) (( n_gone++ )) ;;
+	esac
+done
+
+summary="Fetched ${#fetch_remotes[@]} remote(s), ${#all_branches[@]} branch(es): $n_behind behind, $n_ahead ahead, $n_diverged diverged"
+(( n_gone > 0 )) && summary+=", $n_gone gone"
+echo "$summary, $n_uptodate up to date."
