@@ -1,0 +1,63 @@
+= git-branches
+
+A group of zsh plugins that work on several branches at once, optionally expanding OSS generations with `--disclosures` into their `disclosure/frozen/<generation>` and `disclosure/active/<generation>` branches. All of them validate everything first, report all problems together and never push.
+
+They share the command prefix `git-branches-`, so `git branches-<TAB>` lists them all.
+
+|===
+|Command |Alias |Description
+
+|link:fetch[git-branches-fetch] |`gbbf` |Fetch the remotes behind the branches and report how each compares to its upstream
+|link:pull[git-branches-pull] |`gbbp` |Fast-forward the branches to their upstream
+|link:reset-to-upstream[git-branches-reset-to-upstream] |`gbbu` |Hard reset the branches to their upstream
+|link:check-merged[git-branches-check-merged] |`gbbc` |Check that a chain of branches is merged forward
+|link:merge-forward[git-branches-merge-forward] |`gbbm` |Merge a chain of branches forward
+|link:release[git-branches-release] |`gbbr` |Rebuild or create `release/<version>` branches on their disclosure base
+|===
+
+A typical run goes fetch, pull (or reset-to-upstream), check-merged, merge-forward, push, then release.
+
+== Installation
+
+Load all six:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-branches
+----
+
+Or load only some, by bundling the subfolders:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-branches/fetch
+antigen bundle rwinch/zsh-plugins git-branches/pull
+----
+
+Loading the group and a subfolder together is harmless, it only repeats a `PATH` entry and an alias.
+
+[#aliases]
+== Aliases
+
+All aliases start with `gbb`. The prefix is deliberate, to avoid collisions with the aliases of the oh-my-zsh `git` plugin:
+
+* `gb*` is `git branch` (`gb`, `gba`, `gbd`, `gbl`, `gbm`, `gbr`, `gbs`, ...), so `gb` plus a letter would shadow or be shadowed by them
+* `gbs*` is `git bisect` (`gbs`, `gbsb`, `gbsg`, `gbsn`, `gbso`, `gbsr`, `gbss`), so `gbs` plus a letter (for BrancheS) would collide, for example `gbsr` is `git bisect reset`
+* `gbb*` is not used by the `git`, `gradle`, `mvn`, `wd`, `github` or `extract` plugins
+
+Before adding another letter, check for a clash:
+
+[source,bash]
+----
+alias | grep '^gbb'
+grep -E "^alias gbb" ~/.antigen/bundles/robbyrussell/oh-my-zsh/plugins/git/git.plugin.zsh
+----
+
+== Tests
+
+Every plugin has its own suite, for example `zsh fetch/test/test.sh`. To run all of them:
+
+[source,bash]
+----
+for t in git-branches/*/test/test.sh; do zsh $t | tail -1; done
+----

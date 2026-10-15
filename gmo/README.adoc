@@ -71,4 +71,4 @@ After saving, `git log -1` shows that message, and the working tree/history for 
 
 == Related Plugins
 
-* link:../git-merge-forward[git-merge-forward] - Merges a chain of branches forward normally (taking changes); use `gmo` instead for a hop where the changes should be recorded as merged but not actually applied
+* link:../git-branches/merge-forward[git-branches-merge-forward] - Merges a chain of branches forward normally (taking changes); use `gmo` instead for a hop where the changes should be recorded as merged but not actually applied

@@ -1,0 +1,186 @@
+= git-branches-merge-forward
+
+A zsh plugin that merges a chain of branches forward across git worktrees, with strict up-front validation and optional disclosure-branch merging.
+
+== Overview
+
+This plugin automates the "merge forward" workflow of projects that maintain several long-lived version branches (for example `7.0.x` into `main`), including the commercial `disclosure/<role>/<generation>` branches described in link:../../../spring-merge-tutorial[spring-merge-tutorial].
+It is worktree-aware: a branch that is checked out in a worktree is merged in that directory, and a branch that is checked out nowhere is checked out in the directory you ran the command from (which goes back to its original branch when the run finishes).
+It never pushes. At the end it prints the exact `git push --atomic` commands.
+
+== Features
+
+* The arguments are the whole chain: `git branches-merge-forward 7.0.x 7.1.x main` merges `7.0.x` into `7.1.x`, then `7.1.x` into `main`. The current branch has no special role.
+* `--disclosures` treats the arguments as OSS generations and also merges the `disclosure/frozen` and `disclosure/active` branches (down and across)
+* `--ours` records across hops with `git merge -s ours`, for branches that carry their own version or dependency updates
+* `--dry-run` validates and prints what would happen, and changes nothing
+* It never fetches or pulls: run link:../fetch[git-branches-fetch] and link:../pull[git-branches-pull] first
+* Everything is validated before anything changes, and all problems are reported together
+* If nothing needs merging it says `Everything is up to date, nothing to merge.` and exits 0
+* Conflicts stop at a prompt with the exact commands to resolve them. A merge that fails for another reason prints the error and waits so that you can fix it and retry.
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-branches/merge-forward
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+The plugin also defines the alias `gbbm` for `git-branches-merge-forward`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
+
+== Usage
+
+[source,bash]
+----
+git branches-merge-forward [OPTIONS] BRANCH1 BRANCH2 [BRANCH3 ...]
+git branches-merge-forward [OPTIONS] --disclosures GENERATION [GENERATION ...]
+----
+
+=== Options
+
+[%header,cols="2,1,6"]
+|===
+| Option | Short | Description
+
+| `--dry-run` | `-n` | Validate and print what would happen. Nothing is changed, and it exits 0.
+| `--allow-ahead` | `-a` | Let any branch in the chain be ahead of its upstream. Behind and diverged still fail. Useful when resuming an aborted run, and when several branches carry their own unpushed commits.
+| `--ours` | `-o` | Record across hops with `git merge -s ours` (nothing is carried, so there are no conflicts). Down hops stay real merges.
+| `--disclosures` | `-d` | The arguments are OSS generation branches, oldest to newest. One generation is enough.
+| `--pause` | `-P` | After each merge, stop so that the result can be validated, and say which directory to do it in.
+| `--help` | `-h` | Display the help message.
+|===
+
+== Validation
+
+Nothing changes until all of this passes. Problems are collected and reported together.
+
+. Every branch exists locally (it is never created for you)
+. Every branch has an upstream, and the upstream still exists on the remote
+. Every worktree that will be touched is clean (untracked files count), and has no merge, rebase or cherry-pick in progress
+. Every branch equals its upstream, as of the last fetch (nothing is fetched, see link:../fetch[git-branches-fetch]). The *first* branch may be ahead of its upstream, because that is the work you are merging forward. Behind and diverged always fail. With `--allow-ahead` any branch may be ahead.
+
+A missing upstream is reported with the command that sets it (`git branch --set-upstream-to=<remote>/<branch> <branch>`).
+Each branch is compared with its *own* upstream, so there is no `--remote` option.
+
+== Merging across worktrees
+
+* A branch checked out in another worktree is merged in that worktree. This never fails because of it.
+* A branch that is checked out nowhere is checked out in the directory you ran the command from.
+* After a normal finish that directory is switched back to its original branch. After an abort or an error nothing is restored: the message says which branch the directory was on.
+
+== Disclosure branches
+
+With `--disclosures` every argument is a generation and the plan follows the "How an OSS contribution is merged" section of the tutorial.
+
+[source,text]
+----
+$ git branches-merge-forward --dry-run --disclosures 7.0.x main
+Plan:
+  (1) 7.0.x                   -> main                     across merge would merge
+        dir: /code/spring-merge   upstream: oss/main
+  (2) 7.0.x                   -> disclosure/frozen/7.0.x  down   merge would merge
+  (3) main                    -> disclosure/frozen/main   down   merge would merge
+  (4) disclosure/frozen/7.0.x -> disclosure/frozen/main   across merge would merge
+  (5) disclosure/frozen/7.0.x -> disclosure/active/7.0.x  down   merge would merge
+  (6) disclosure/frozen/main  -> disclosure/active/main   down   merge would merge
+  (7) disclosure/active/7.0.x -> disclosure/active/main   across merge would merge
+
+Dry run: nothing was changed. At the end it would print:
+  git push --atomic oss \
+    7.0.x main
+  git push --atomic commercial \
+    disclosure/frozen/7.0.x disclosure/frozen/main disclosure/active/7.0.x disclosure/active/main
+----
+
+For every generation (`N`) the plan is: the OSS branches merge across, then for `frozen` and then `active` each `disclosure/<role>/<generation>` merges down (the OSS branch into `frozen`, `frozen` into `active`) and across (the same disclosure of the previous generation).
+In a dry run a hop is `up to date` when its source is already in its target, and `would merge` otherwise. Hops that depend on an earlier merge are shown as `would merge`.
+
+The CVE flow of the tutorial needs no option: `git branches-merge-forward disclosure/active/7.0.x disclosure/active/main` is a plain chain.
+
+== Dependency updates (`--ours`)
+
+When each branch carries its own version or dependency updates that must not merge into the next branch, use `--ours`.
+Across hops run `git merge -s ours --no-ff -m "merge(ours): <source> into <target>"`: the merge is recorded but nothing is carried, so there are no conflicts.
+Down hops stay real merges, so every generation keeps its own updates in its disclosure branches.
+
+If `7.0.x`, `7.1.x` and `main` each carry their own unpushed dependency updates:
+
+[source,bash]
+----
+git branches-merge-forward --ours --allow-ahead --disclosures 7.0.x 7.1.x main
+----
+
+`--allow-ahead` is needed because `7.1.x` and `main` are ahead of their upstreams. Drop it if those updates are already pushed.
+
+== Release branches
+
+Rebuilding and creating `release/<version>` branches is done by link:../release[git-branches-release]. Run it after the merged branches are pushed.
+
+== The end of a run
+
+[source,text]
+----
+Done! Merged 7 hop(s).
+Restored '7.0.x' in /code/spring-merge
+
+Nothing has been pushed. To publish, run:
+  git push --atomic oss \
+    7.0.x main
+  git push --atomic commercial \
+    disclosure/frozen/7.0.x disclosure/frozen/main disclosure/active/7.0.x disclosure/active/main
+----
+
+There is one command per remote, in plan order, because `--atomic` cannot span remotes.
+A branch whose upstream has a different name is pushed as `local:remote-name`.
+
+== Examples
+
+[source,bash]
+----
+# merge 7.0.x into 7.1.x, then 7.1.x into main
+git branches-merge-forward 7.0.x 7.1.x main
+
+# see what would happen
+git branches-merge-forward --dry-run 7.0.x main
+
+# fetch and fast-forward every branch first
+git branches-fetch 7.0.x main && git branches-pull 7.0.x main
+
+# resume after an aborted run (the merged branches are ahead of their upstreams)
+git branches-merge-forward --allow-ahead 7.0.x main
+
+# merge, including the disclosure branches
+git branches-merge-forward --disclosures 7.0.x main
+
+# short options
+git branches-merge-forward -n -d 7.0.x main
+----
+
+== Tests
+
+`test/test.sh` builds throwaway repositories (bare `oss` and `commercial` remotes, worktrees and disclosure branches) and checks the behavior above:
+
+[source,bash]
+----
+git-branches/merge-forward/test/test.sh            # all tests
+git-branches/merge-forward/test/test.sh ours       # tests whose name contains "ours"
+DEBUG=1 git-branches/merge-forward/test/test.sh    # also print the output of every run
+----
+
+== Requirements
+
+* Must be run from within a git repository (not a bare one)
+* Every branch needs an upstream
+* Every worktree touched must be clean, including untracked files
+* Git worktree support (Git 2.5+)
+
+== Related Plugins
+
+* link:../fetch[git-branches-fetch] - Fetch and report how each branch compares to its upstream, run it before merging
+* link:../pull[git-branches-pull] - Fast-forward the branches that are behind, run it before merging
+* link:../release[git-branches-release] - Rebuild or create `release/<version>` branches once the merge is pushed
+* link:../../git-create-worktrees[git-create-worktrees] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
+* link:../../gmo[gmo] - Records a single merge with `git merge -s ours` and an editable message
+* link:../../../spring-merge-tutorial[spring-merge-tutorial] - Describes the disclosure branch merges the `--disclosures` plan follows
