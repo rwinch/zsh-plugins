@@ -142,6 +142,7 @@ t "diverged branch is reset" '
 	git -C $S checkout -q main
 	echo up >> $S/up.txt; git -C $S add up.txt; git -C $S commit -qm up
 	git -C $S push -q oss main
+	git -C $W fetch -q oss
 	run main; expect_rc 0
 	expect_out "diverged"
 	[[ $(sha main) == $(sha oss/main) ]]

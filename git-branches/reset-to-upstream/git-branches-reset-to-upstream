@@ -28,8 +28,8 @@ Usage: git-branches-reset-to-upstream [OPTIONS] BRANCH1 [BRANCH2 ...]
        git-branches-reset-to-upstream [OPTIONS] --disclosures GENERATION [GENERATION ...]
        git-branches-reset-to-upstream [OPTIONS] --releases VERSION[,VERSION ...]
 
-Hard reset every given branch to its remote tracked (upstream) branch, after
-fetching. A branch checked out in a worktree is reset in that worktree, any
+Hard reset every given branch to its remote tracked (upstream) branch as of the
+last fetch (nothing is fetched: run git-branches-fetch first). A branch checked out in a worktree is reset in that worktree, any
 other branch is moved with 'git branch -f'. Local commits are discarded; their
 SHAs are printed at the end so they can be recovered.
 
@@ -38,7 +38,7 @@ together: every branch exists locally, has an upstream, and its worktree (if
 any) is clean (untracked files count). Nothing is pushed.
 
 OPTIONS:
-  --dry-run, -n        Fetch, validate and print what would happen. Nothing is reset.
+  --dry-run, -n        Validate and print what would happen. Nothing is reset.
   --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
                        Each is reset together with disclosure/frozen/<generation>
                        and disclosure/active/<generation>.
@@ -195,7 +195,7 @@ validate_remote_refs() {
 	local b
 	for b in "${all_branches[@]}"; do
 		if ! git show-ref --verify --quiet "refs/remotes/$(upstream_display $b)"; then
-			problem "$b: upstream '$(upstream_display $b)' no longer exists on the remote (gone)"
+			problem "$b: upstream '$(upstream_display $b)' does not exist (gone, or run git-branches-fetch)"
 		fi
 	done
 }
@@ -304,16 +304,6 @@ for b in "${release_branches[@]}"; do
 done
 
 validate_local
-fail_if_problems
-
-typeset -a fetch_remotes
-for b in "${all_branches[@]}"; do
-	(( ${fetch_remotes[(Ie)${up_remote[$b]}]} )) || fetch_remotes+=("${up_remote[$b]}")
-done
-for r in "${fetch_remotes[@]}"; do
-	echo "Fetching '$r'..."
-	git fetch --quiet "$r" || problem "git fetch $r failed"
-done
 fail_if_problems
 
 validate_remote_refs

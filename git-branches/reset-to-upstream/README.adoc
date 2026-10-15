@@ -4,11 +4,11 @@ A zsh plugin that hard resets branches to their remote tracked branches, across 
 
 == Features
 
-* `git branches-reset-to-upstream 7.0.x main` fetches, then resets each branch to its upstream
+* `git branches-reset-to-upstream 7.0.x main` resets each branch to its upstream as of the last fetch (nothing is fetched, run `git-branches-fetch` first)
 * `--disclosures` also resets `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
 * `--releases` also resets `release/<version>`
 * A branch checked out in a worktree is reset there, any other branch is moved with `git branch -f`
-* `--dry-run` fetches, validates and prints the plan, and changes nothing
+* `--dry-run` validates and prints the plan, and changes nothing
 * Everything is validated first (branch exists, has an upstream, worktree clean) and all problems are reported together
 * The SHAs of discarded local commits are printed so they can be recovered
 * Nothing is pushed
