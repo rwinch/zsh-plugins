@@ -17,8 +17,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_EDITOR=true
 
 # ---- fixture ----
 # $R root, $S seed repo, $W work clone. Branches: 7.0.x main (oss);
-# disclosure/{frozen,active}/{7.0.x,main}, release/7.0.1, release/7.0.1.1,
-# release/7.1.0 (commercial). Each release has one release-only LICENSE commit.
+# disclosure/{frozen,active}/{7.0.x,main} (commercial).
 setup() {
 	R=$(mktemp -d); R=${R:A}
 	S=$R/seed; W=$R/work
@@ -33,15 +32,9 @@ setup() {
 	for g in 7.0.x main; do
 		for role in frozen active; do git -C $S branch disclosure/$role/$g $g; done
 	done
-	local rel from
-	for rel in "release/7.0.1 disclosure/frozen/7.0.x" "release/7.0.1.1 disclosure/active/7.0.x" "release/7.1.0 disclosure/frozen/main"; do
-		set -- ${=rel}
-		git -C $S checkout -q -b $1 $2
-		echo lic > $S/LICENSE; git -C $S add LICENSE; git -C $S commit -qm "license $1"
-	done
 	git -C $S checkout -q main
 	git -C $S push -q oss main 7.0.x
-	git -C $S push -q commercial 'refs/heads/disclosure/*' 'refs/heads/release/*'
+	git -C $S push -q commercial 'refs/heads/disclosure/*'
 	git clone -q -o oss $R/oss.git $W 2>/dev/null
 	git -C $W remote add commercial $R/commercial.git
 	git -C $W fetch -q commercial
@@ -100,16 +93,7 @@ t "args: no args, single branch, unknown option, duplicates" '
 	run; expect_rc 1
 	run main; expect_rc 1; expect_out "single branch needs --disclosures"
 	run -x a b; expect_rc 1; expect_out "Unknown option"
-	run -r; expect_rc 1
 	run a a; expect_rc 1; expect_out "more than once"
-'
-
-t "args: release version format and base rules" '
-	run -r 7.0; expect_rc 1; expect_out "Invalid release version"
-	run -r 7.1.1-RC1; expect_rc 1; expect_out "patch 0"
-	run -r 7.0.1,7.0.2; expect_rc 1; expect_out "at most one per base"
-	run -r 7.0.1.1,7.0.2.1; expect_rc 1; expect_out "at most one per base"
-	run -r 7.0.1,7.0.1; expect_rc 1; expect_out "more than once"
 '
 
 t "plain chain merges across worktrees (target in another worktree)" '
@@ -253,70 +237,6 @@ t "ours + disclosures: ours across, real merges down" '
 	contains disclosure/frozen/7.0.x disclosure/active/main
 	contains disclosure/active/7.0.x disclosure/active/main
 	[[ "$(git -C $W log -1 --format=%s disclosure/active/main)" == merge\(ours\):* ]]
-'
-
-t "releases: rebuilt on the disclosure branch plus release-only commits" '
-	commit_on $W 7.0.x fix.txt
-	local old=$(git -C $W rev-parse commercial/release/7.0.1)
-	run -d 7.0.x main -r 7.0.1,7.0.1.1; expect_rc 0
-	for r in release/7.0.1 release/7.0.1.1; do
-		has_file $r fix.txt && has_file $r LICENSE || { echo "    $r wrong"; return 1 }
-	done
-	contains disclosure/frozen/7.0.x release/7.0.1
-	contains disclosure/active/7.0.x release/7.0.1.1
-	[[ $(git -C $W rev-list --count disclosure/frozen/7.0.x..release/7.0.1) -eq 1 ]]
-	expect_out "\+release/7.0.1 "
-	expect_out "--force-with-lease=release/7.0.1:$old"
-	[[ $(branch_of $W) == 7.0.x ]]
-'
-
-t "releases alone: dry run, rewrite, then up to date once pushed" '
-	commit_on $W 7.0.x fix.txt
-	run -d 7.0.x main; expect_rc 0
-	git -C $W push -q oss 7.0.x main
-	git -C $W push -q commercial disclosure/frozen/7.0.x disclosure/frozen/main disclosure/active/7.0.x disclosure/active/main
-	run -n -r 7.0.1; expect_rc 0; expect_out "release/7.0.1 on disclosure/frozen/7.0.x: would rebase 1 commit"
-	run -r 7.0.1; expect_rc 0
-	contains disclosure/frozen/7.0.x release/7.0.1
-	git -C $W push -q -f commercial release/7.0.1
-	run -r 7.0.1; expect_rc 0
-	expect_out "Everything is up to date, nothing to merge."
-'
-
-t "releases: main fallback, skips and several newer generations" '
-	commit_on $W disclosure/frozen/main fm.txt
-	git -C $W push -q commercial disclosure/frozen/main
-	git -C $W checkout -q 7.0.x
-	run -n -r 7.1.0; expect_rc 0
-	expect_out "release/7.1.0 on disclosure/frozen/main"
-	expect_out "no 7.1.x branch, newest generation"
-	run -n -r 7.2.0; expect_rc 1; expect_out "7.2.0: no disclosure/\*/7.2.x"
-	run -n -r 7.1.0,8.0.0; expect_rc 1; expect_out "several newer generations"
-	run -n -r 6.5.0; expect_rc 1; expect_out "not the generation after the newest"
-	run -n -r 7.1.0-RC1; expect_rc 1
-	expect_out "does not exist on"
-'
-
-t "releases: merge commit among release-only commits is an error" '
-	git -C $W checkout -q -b tmp commercial/release/7.0.1
-	git -C $W checkout -q -b side
-	echo s > $W/s; git -C $W add s; git -C $W commit -qm side
-	git -C $W checkout -q tmp
-	echo t > $W/t; git -C $W add t; git -C $W commit -qm tip
-	git -C $W merge -q --no-ff side -m mergecommit > /dev/null
-	git -C $W push -q commercial tmp:release/7.0.1
-	git -C $W checkout -q 7.0.x; git -C $W branch -q -D tmp side
-	run -n -r 7.0.1; expect_rc 1
-	expect_out "merge commit"
-'
-
-t "releases: unexpected local release branch is an error" '
-	git -C $W branch -q release/7.0.1 commercial/release/7.0.1
-	git -C $W checkout -q release/7.0.1
-	commit_on $W release/7.0.1 local.txt
-	git -C $W checkout -q 7.0.x
-	run -n -r 7.0.1; expect_rc 1
-	expect_out "local branch differs"
 '
 
 # A conflict stops at the prompt; resolve it from "another terminal" and press Enter.

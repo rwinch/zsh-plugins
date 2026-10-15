@@ -1,6 +1,6 @@
 = git-merge-forward
 
-A zsh plugin that merges a chain of branches forward across git worktrees, with strict up-front validation, optional disclosure-branch merging and rebuilding of `release/<version>` branches.
+A zsh plugin that merges a chain of branches forward across git worktrees, with strict up-front validation and optional disclosure-branch merging.
 
 == Overview
 
@@ -13,7 +13,6 @@ It never pushes. At the end it prints the exact `git push --atomic` commands.
 * The arguments are the whole chain: `git merge-forward 7.0.x 7.1.x main` merges `7.0.x` into `7.1.x`, then `7.1.x` into `main`. The current branch has no special role.
 * `--disclosures` treats the arguments as OSS generations and also merges the `disclosure/frozen` and `disclosure/active` branches (down and across)
 * `--ours` records across hops with `git merge -s ours`, for branches that carry their own version or dependency updates
-* `--releases` rebuilds `release/<version>` branches on top of their disclosure branch (needs a force push, which the printed command carries with a lease)
 * `--dry-run` validates and prints what would happen, and changes nothing
 * It never fetches or pulls: run link:../git-fetch-branches[git-fetch-branches] and link:../git-pull-branches[git-pull-branches] first
 * Everything is validated before anything changes, and all problems are reported together
@@ -37,7 +36,6 @@ The plugin also defines the alias `gmf` for `git-merge-forward`.
 ----
 git merge-forward [OPTIONS] BRANCH1 BRANCH2 [BRANCH3 ...]
 git merge-forward [OPTIONS] --disclosures GENERATION [GENERATION ...]
-git merge-forward [OPTIONS] --releases VERSION[,VERSION ...]
 ----
 
 === Options
@@ -50,8 +48,7 @@ git merge-forward [OPTIONS] --releases VERSION[,VERSION ...]
 | `--allow-ahead` | `-a` | Let any branch in the chain be ahead of its upstream. Behind and diverged still fail. Useful when resuming an aborted run, and when several branches carry their own unpushed commits.
 | `--ours` | `-o` | Record across hops with `git merge -s ours` (nothing is carried, so there are no conflicts). Down hops stay real merges.
 | `--disclosures` | `-d` | The arguments are OSS generation branches, oldest to newest. One generation is enough.
-| `--releases LIST` | `-r` | Comma separated release versions to rebuild. Alone, only the releases are updated.
-| `--pause` | `-P` | After each merge or release, stop so that the result can be validated, and say which directory to do it in.
+| `--pause` | `-P` | After each merge, stop so that the result can be validated, and say which directory to do it in.
 | `--help` | `-h` | Display the help message.
 |===
 
@@ -117,32 +114,22 @@ git merge-forward --ours --allow-ahead --disclosures 7.0.x 7.1.x main
 
 `--allow-ahead` is needed because `7.1.x` and `main` are ahead of their upstreams. Drop it if those updates are already pushed.
 
-== Release branches (`--releases`)
+== Release branches
 
-`--releases 7.0.1,7.0.1.1` rebuilds `release/7.0.1` and `release/7.0.1.1`.
-Each release becomes its base disclosure branch plus the commits that are only on the remote release branch (`git rebase --onto <base> <remote base> release/<version>`).
-Use it together with a merge, or alone to update only the releases from the current state.
-
-* The version is `<major>.<minor>.<patch>`, optionally followed by `.<hotfix>`, `-RC<n>` or `-M<n>`. An RC or M version must have patch `0`.
-* A hotfix version (`7.0.1.1`) is based on `disclosure/active/<major>.<minor>.x`. Every other version is based on `disclosure/frozen/<major>.<minor>.x`.
-* At most one version per base branch: one hotfix and one non-hotfix per generation.
-* A version whose generation has no disclosure branches maps to the `main` disclosure branches, but only when it is the next generation after the newest existing one (`7.1.0` when `7.0.x` is the newest). A skipped minor or major, or several new generations, is an error.
-* The release branch must exist on the remote of its base branch. A missing local branch is created from it. A local release branch that differs from the remote is an error (link:../git-pull-branches[git-pull-branches] fast-forwards one that is only behind). Merge commits among the release-only commits are an error.
-* A rebase conflict stops at a prompt: resolve it and run `git -C <dir> rebase --continue`, then press Enter.
-* The release is pushed with the other branches of its remote, as `+release/<version>` with `--force-with-lease=release/<version>:<sha>`, where the sha is what the remote branch was when it was fetched.
+Rebuilding and creating `release/<version>` branches is done by link:../git-release-branches[git-release-branches]. Run it after the merged branches are pushed.
 
 == The end of a run
 
 [source,text]
 ----
-Done! Merged 7 hop(s), updated 2 release(s).
+Done! Merged 7 hop(s).
 Restored '7.0.x' in /code/spring-merge
 
 Nothing has been pushed. To publish, run:
   git push --atomic oss \
     7.0.x main
   git push --atomic commercial \
-    disclosure/frozen/7.0.x disclosure/frozen/main disclosure/active/7.0.x disclosure/active/main +release/7.0.1 +release/7.0.1.1 --force-with-lease=release/7.0.1:ab12cd3 --force-with-lease=release/7.0.1.1:ef45a67
+    disclosure/frozen/7.0.x disclosure/frozen/main disclosure/active/7.0.x disclosure/active/main
 ----
 
 There is one command per remote, in plan order, because `--atomic` cannot span remotes.
@@ -167,24 +154,18 @@ git merge-forward --allow-ahead 7.0.x main
 # merge, including the disclosure branches
 git merge-forward --disclosures 7.0.x main
 
-# only rebuild two release branches from the current state
-git merge-forward --releases 7.0.1,7.0.1.1
-
-# merge, then rebuild a release branch
-git merge-forward --disclosures 7.0.x main --releases 7.0.1.1
-
 # short options
-git merge-forward -n -d 7.0.x main -r 7.0.1
+git merge-forward -n -d 7.0.x main
 ----
 
 == Tests
 
-`test/test.sh` builds throwaway repositories (bare `oss` and `commercial` remotes, worktrees, disclosure and release branches) and checks the behavior above:
+`test/test.sh` builds throwaway repositories (bare `oss` and `commercial` remotes, worktrees and disclosure branches) and checks the behavior above:
 
 [source,bash]
 ----
 git-merge-forward/test/test.sh            # all tests
-git-merge-forward/test/test.sh releases   # tests whose name contains "releases"
+git-merge-forward/test/test.sh ours       # tests whose name contains "ours"
 DEBUG=1 git-merge-forward/test/test.sh    # also print the output of every run
 ----
 
@@ -199,6 +180,7 @@ DEBUG=1 git-merge-forward/test/test.sh    # also print the output of every run
 
 * link:../git-fetch-branches[git-fetch-branches] - Fetch and report how each branch compares to its upstream, run it before merging
 * link:../git-pull-branches[git-pull-branches] - Fast-forward the branches that are behind, run it before merging
+* link:../git-release-branches[git-release-branches] - Rebuild or create `release/<version>` branches once the merge is pushed
 * link:../git-create-worktrees[git-create-worktrees] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
 * link:../gmo[gmo] - Records a single merge with `git merge -s ours` and an editable message
 * link:../../spring-merge-tutorial[spring-merge-tutorial] - Describes the disclosure branch merges the `--disclosures` plan follows
