@@ -1,3 +1,3 @@
 export PATH=$(dirname $0):${PATH}
 
-alias gbbu=git-branches-reset-to-upstream
+alias gbbrtu=git-branches-reset-to-upstream

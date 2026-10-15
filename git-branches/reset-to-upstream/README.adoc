@@ -20,7 +20,7 @@ A zsh plugin that hard resets branches to their remote tracked branches, across 
 antigen bundle rwinch/zsh-plugins git-branches/reset-to-upstream
 ----
 
-The plugin also defines the alias `gbbu` for `git-branches-reset-to-upstream`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
+The plugin also defines the alias `gbbrtu` for `git-branches-reset-to-upstream`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
 == Usage
 
