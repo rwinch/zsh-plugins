@@ -28,13 +28,13 @@ antigen bundle rwinch/zsh-plugins git-branches/merge-forward
 
 Or manually by adding the plugin directory to your `PATH`.
 
-The plugin also defines the alias `gbbm` for `git-branches-merge-forward`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
+The plugin also defines the alias `gbbmf` for `git-branches-merge-forward`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
 To fill in the branches, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line):
 
 [source,bash]
 ----
-gbbm $(svaob)
+gbbmf $(svaob)
 ----
 
 == Usage
