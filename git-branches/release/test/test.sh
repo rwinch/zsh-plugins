@@ -207,8 +207,12 @@ t "validation: base branch behind, ahead and missing" '
 t "validation: base branch ahead of its upstream" '
 	commit_on $W disclosure/frozen/7.0.x local.txt
 	git -C $W checkout -q 7.0.x
-	run rebase -n 7.0.1; expect_rc 1
-	expect_out "disclosure/frozen/7.0.x: ahead of commercial/disclosure/frozen/7.0.x by 1 commit\(s\), push it first"
+	run rebase -n 7.0.1; expect_rc 0
+	expect_out "disclosure/frozen/7.0.x is ahead of commercial/disclosure/frozen/7.0.x by 1 commit\(s\)"
+	reject_out "push it first"
+	run rebase 7.0.1; expect_rc 0
+	expect_out "git push --atomic commercial"
+	expect_out "disclosure/frozen/7.0.x \+release/7.0.1 "
 '
 
 t "validation: dirty worktree and missing upstream together" '

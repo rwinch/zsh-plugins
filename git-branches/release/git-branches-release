@@ -20,6 +20,7 @@ typeset -a rel_will      # 1 when the release would be rewritten
 typeset -a rel_lease     # sha of the remote release branch before rewriting
 
 typeset -a all_branches  # the base branches taking part
+typeset -a ahead_branches # base branches ahead of their upstream (pushed with the releases)
 typeset -A up_remote     # branch -> remote of its upstream
 typeset -A up_branch     # branch -> branch name on that remote
 typeset -a problems
@@ -46,8 +47,9 @@ else on disclosure/frozen/<major>.<minor>.x.
 
 Everything is validated before anything changes, and all problems are reported
 together: every base branch exists locally, has an upstream, has a clean worktree
-(untracked files count) and equals its upstream as of the last fetch (nothing is
-fetched or pulled: run git-branches-fetch and git-branches-pull first).
+(untracked files count) and equals its upstream as of the last fetch, or is ahead
+of it (then it is pushed together with the releases). Nothing is fetched or pulled:
+run git-branches-fetch and git-branches-pull first.
 Nothing is pushed: the push commands are printed at the end.
 
 OPTIONS:
@@ -381,9 +383,9 @@ validate_remote_refs() {
 	done
 }
 
-# Every base branch must match its upstream.
+# Every base branch must match its upstream or be ahead of it.
 check_up_to_date() {
-	local b unpushed
+	local b
 	for b in "${all_branches[@]}"; do
 		[[ -z "${up_remote[$b]}" ]] && continue
 		git show-ref --verify --quiet "refs/remotes/${up_remote[$b]}/${up_branch[$b]}" || continue
@@ -395,8 +397,7 @@ check_up_to_date() {
 		elif [[ "$ab_behind" -gt 0 ]]; then
 			problem "$b: behind $(upstream_display $b) by $ab_behind commit(s) (run git-branches-pull)"
 		else
-			unpushed=$(git log --oneline -5 "refs/remotes/${up_remote[$b]}/${up_branch[$b]}..refs/heads/$b")
-			problem "$b: ahead of $(upstream_display $b) by $ab_ahead commit(s), push it first${nl}${unpushed}"
+			ahead_branches+=("$b")
 		fi
 	done
 }
@@ -446,6 +447,16 @@ print_plan() {
 		fi
 		[[ -n "${rel_note[$i]}" ]] && echo "        (${rel_note[$i]})"
 	done
+
+	if (( ${#ahead_branches[@]} )); then
+		echo ""
+		echo "Not yet pushed (pushed together with the releases below):"
+		for base in "${ahead_branches[@]}"; do
+			ahead_behind "$base"
+			echo "  $base is ahead of $(upstream_display $base) by $ab_ahead commit(s):"
+			git log --oneline -5 "refs/remotes/${up_remote[$base]}/${up_branch[$base]}..refs/heads/$base" | sed 's/^/    /'
+		done
+	fi
 }
 
 # One 'git push --atomic' per remote. Every rebuilt release is forced with a
@@ -461,6 +472,14 @@ print_push_commands() {
 
 	for r in "${remotes[@]}"; do
 		refs=()
+		for base in "${ahead_branches[@]}"; do
+			[[ "${up_remote[$base]}" == "$r" ]] || continue
+			if [[ "$base" == "${up_branch[$base]}" ]]; then
+				refs+=("$base")
+			else
+				refs+=("$base:${up_branch[$base]}")
+			fi
+		done
 		for (( i = 1; i <= ${#rel_version[@]}; i++ )); do
 			[[ "${rel_will[$i]}" -eq 1 ]] || continue
 			[[ "${up_remote[${rel_base[$i]}]}" == "$r" ]] || continue
