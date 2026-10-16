@@ -3,25 +3,31 @@
 # Default values
 remote=""
 owner=""
+name_prefix=""
+skip_missing_remote=0
+typeset -a patterns
 
 # Usage function
 usage() {
 	cat <<EOF
-Usage: git-worktrees-create [OPTIONS]
+Usage: git-worktrees-create [OPTIONS] PATTERN [PATTERN ...]
 
-Create git worktrees for all matching branches from a remote repository.
+Create git worktrees for the branches of a remote repository that match the given patterns.
+
+PATTERN is a shell glob or a literal branch name. Quote globs so the shell does
+not expand them. '*' also matches '/'.
 
 OPTIONS:
-  --remote REMOTE      Specify the remote name (default: repository owner)
-  --help               Display this help message
+  --remote REMOTE         Specify the remote name (default: repository owner)
+  --name-prefix PREFIX    Prepend PREFIX to the local branch name and the worktree
+                          directory, for a remote whose branch names clash with
+                          local ones (commercial/docs-build -> commercial-docs-build)
+  --skip-missing-remote   If the remote does not exist, say so and exit 0
+  --help                  Display this help message
 
 BEHAVIOR:
-  - Iterates over all branches on the specified remote
-  - Processes branches that match the pattern \d+\.\d+.x (e.g., 5.8.x, 6.0.x)
-  - Also processes all branches under disclosure/ (e.g., disclosure/CVE-2025-1234/5.8.x, disclosure/frozen/main)
-  - Also processes branches that match release/* (e.g., release/1.0)
-  - Also processes branches named 'main' and 'docs-build'
-  - For each matching branch:
+  - Fetches the remote, then iterates over all of its branches
+  - For each branch that matches a pattern:
     * If worktree at ../{branch} exists, skips with a message
     * Otherwise:
       - Creates a local tracking branch if it doesn't exist
@@ -30,9 +36,12 @@ BEHAVIOR:
     (~/code/OWNER/REPOSITORY/...)
 
 EXAMPLES:
-  git-worktrees-create                    # Use owner as remote (auto-detected)
-  git-worktrees-create --remote upstream  # Use 'upstream' as remote
-  git-worktrees-create --remote origin    # Use 'origin' as remote
+  git-worktrees-create 'release/*' main
+  git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'disclosure/*'
+  git-worktrees-create --remote commercial --name-prefix commercial- docs-build
+
+The gwwca function runs these patterns for you: [0-9]*.[0-9]*.x, disclosure/*,
+release/*, main, docs-build, plus docs-build from the commercial remote.
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -55,6 +64,20 @@ while [[ $# -gt 0 ]]; do
 			remote="$2"
 			shift 2
 			;;
+		--name-prefix)
+			if [[ -z "$2" || "$2" == --* ]]; then
+				echo "Error: --name-prefix requires a value" >&2
+				echo "" >&2
+				usage
+				exit 1
+			fi
+			name_prefix="$2"
+			shift 2
+			;;
+		--skip-missing-remote)
+			skip_missing_remote=1
+			shift
+			;;
 		--help)
 			usage
 			exit 0
@@ -66,13 +89,18 @@ while [[ $# -gt 0 ]]; do
 			exit 1
 			;;
 		*)
-			echo "Error: Unexpected positional argument: $1" >&2
-			echo "" >&2
-			usage
-			exit 1
+			patterns+=("$1")
+			shift
 			;;
 	esac
 done
+
+if (( ${#patterns} == 0 )); then
+	echo "Error: At least one PATTERN is required" >&2
+	echo "" >&2
+	usage
+	exit 1
+fi
 
 # Validate we're in a git repository
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -84,15 +112,15 @@ fi
 if [[ -z "$remote" ]]; then
 	pwd=$(pwd)
 	code_dir="$HOME/code"
-	
+
 	# Check if we're inside ~/code
 	if [[ "$pwd" == "$code_dir"/* ]]; then
 		# Remove the ~/code prefix
 		relative_path="${pwd#$code_dir/}"
-		
+
 		# Extract owner (first directory after ~/code)
 		owner=$(echo "$relative_path" | cut -d'/' -f1)
-		
+
 		if [[ -n "$owner" ]]; then
 			remote="$owner"
 		fi
@@ -110,6 +138,10 @@ fi
 
 # Validate the remote exists
 if ! git remote get-url "$remote" > /dev/null 2>&1; then
+	if (( skip_missing_remote )); then
+		echo "Remote '$remote' does not exist, skipping"
+		exit 0
+	fi
 	echo "Error: Remote '$remote' does not exist" >&2
 	echo "" >&2
 	echo "Available remotes:" >&2
@@ -132,39 +164,46 @@ echo ""
 remote_branches=$(git branch -r | grep "^  $remote/" | sed "s|^  $remote/||" | grep -v "HEAD")
 
 # Process each branch
-for branch in ${(f)remote_branches}; do
-	# Check if branch matches version pattern (e.g., 5.8.x, 6.0.x) or is main/docs-build
-	if [[ "$branch" =~ ^[0-9]+\.[0-9]+\.x$ ]] || [[ "$branch" =~ ^disclosure/.+$ ]] || [[ "$branch" =~ ^release/[^/]+$ ]] || [[ "$branch" == "main" ]] || [[ "$branch" == "docs-build" ]]; then
-		worktree_path="../${branch}"
-		
-		# Check if worktree already exists
-		if [[ -d "$worktree_path" ]]; then
-			echo "✓ Worktree already exists: $worktree_path"
+for remote_branch in ${(f)remote_branches}; do
+	# Does the branch match one of the patterns?
+	matched=0
+	for pattern in $patterns; do
+		if [[ "$remote_branch" == ${~pattern} ]]; then
+			matched=1
+			break
+		fi
+	done
+	(( matched )) || continue
+
+	branch="${name_prefix}${remote_branch}"
+	worktree_path="../${branch}"
+
+	# Check if worktree already exists
+	if [[ -d "$worktree_path" ]]; then
+		echo "✓ Worktree already exists: $worktree_path"
+	else
+		echo "Processing branch: $remote_branch"
+
+		# Check if local branch exists
+		if git show-ref --verify --quiet "refs/heads/$branch"; then
+			echo "  → Local branch '$branch' already exists"
 		else
-			echo "Processing branch: $branch"
-			
-			# Check if local branch exists
-			if git show-ref --verify --quiet "refs/heads/$branch"; then
-				echo "  → Local branch '$branch' already exists"
-			else
-				echo "  → Creating local branch '$branch' tracking '$remote/$branch'"
-				if ! git branch --track "$branch" "$remote/$branch"; then
-					echo "  ✗ Failed to create local branch '$branch'" >&2
-					continue
-				fi
-			fi
-			
-			# Create worktree
-			echo "  → Creating worktree at $worktree_path"
-			if git worktree add "$worktree_path" "$branch"; then
-				echo "  ✓ Successfully created worktree: $worktree_path"
-			else
-				echo "  ✗ Failed to create worktree at $worktree_path" >&2
+			echo "  → Creating local branch '$branch' tracking '$remote/$remote_branch'"
+			if ! git branch --track "$branch" "$remote/$remote_branch"; then
+				echo "  ✗ Failed to create local branch '$branch'" >&2
+				continue
 			fi
 		fi
-		echo ""
+
+		# Create worktree
+		echo "  → Creating worktree at $worktree_path"
+		if git worktree add "$worktree_path" "$branch"; then
+			echo "  ✓ Successfully created worktree: $worktree_path"
+		else
+			echo "  ✗ Failed to create worktree at $worktree_path" >&2
+		fi
 	fi
+	echo ""
 done
 
 echo "Done!"
-
