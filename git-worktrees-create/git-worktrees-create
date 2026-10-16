@@ -5,6 +5,7 @@ remote=""
 owner=""
 name_prefix=""
 skip_missing_remote=0
+dry_run=0
 typeset -a patterns
 
 # Usage function
@@ -23,6 +24,8 @@ OPTIONS:
                           directory, for a remote whose branch names clash with
                           local ones (commercial/docs-build -> commercial-docs-build)
   --skip-missing-remote   If the remote does not exist, say so and exit 0
+  --dry-run               Show what would be created without fetching or creating
+                          anything (uses the branches already fetched)
   --help                  Display this help message
 
 BEHAVIOR:
@@ -77,6 +80,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--skip-missing-remote)
 			skip_missing_remote=1
+			shift
+			;;
+		--dry-run)
+			dry_run=1
 			shift
 			;;
 		--help)
@@ -154,10 +161,14 @@ echo "Using remote: $remote"
 echo ""
 
 # Fetch the latest from remote
-echo "Fetching from remote '$remote'..."
-if ! git fetch "$remote"; then
-	echo "Error: Failed to fetch from remote '$remote'" >&2
-	exit 1
+if (( dry_run )); then
+	echo "Dry run: not fetching, using the branches already fetched from '$remote'"
+else
+	echo "Fetching from remote '$remote'..."
+	if ! git fetch "$remote"; then
+		echo "Error: Failed to fetch from remote '$remote'" >&2
+		exit 1
+	fi
 fi
 echo ""
 
@@ -216,21 +227,29 @@ for remote_branch in ${(f)remote_branches}; do
 		if git show-ref --verify --quiet "refs/heads/$branch"; then
 			echo "  → Local branch '$branch' already exists"
 		else
-			echo "  → Creating local branch '$branch' tracking '$remote/$remote_branch'"
-			if ! git branch --track "$branch" "$remote/$remote_branch"; then
-				echo "  ✗ Failed to create local branch '$branch'" >&2
-				(( failed++ ))
-				continue
+			if (( dry_run )); then
+				echo "  → Would create local branch '$branch' tracking '$remote/$remote_branch'"
+			else
+				echo "  → Creating local branch '$branch' tracking '$remote/$remote_branch'"
+				if ! git branch --track "$branch" "$remote/$remote_branch"; then
+					echo "  ✗ Failed to create local branch '$branch'" >&2
+					(( failed++ ))
+					continue
+				fi
 			fi
 		fi
 
 		# Create worktree
-		echo "  → Creating worktree at $shown_path"
-		if git worktree add "$worktree_path" "$branch"; then
-			echo "  ✓ Successfully created worktree: $shown_path"
+		if (( dry_run )); then
+			echo "  → Would create worktree at $shown_path"
 		else
-			echo "  ✗ Failed to create worktree at $shown_path" >&2
-			(( failed++ ))
+			echo "  → Creating worktree at $shown_path"
+			if git worktree add "$worktree_path" "$branch"; then
+				echo "  ✓ Successfully created worktree: $shown_path"
+			else
+				echo "  ✗ Failed to create worktree at $shown_path" >&2
+				(( failed++ ))
+			fi
 		fi
 	fi
 	echo ""
@@ -244,4 +263,8 @@ if (( failed )); then
 	echo "Done, $failed failed"
 	exit 1
 fi
-echo "Done!"
+if (( dry_run )); then
+	echo "Done! (dry run, nothing created)"
+else
+	echo "Done!"
+fi

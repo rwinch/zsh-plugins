@@ -30,7 +30,7 @@ Or manually by adding the plugin directory to your `PATH`.
 
 == Usage
 
-The plugin also defines the alias `gwwc` for `git-worktrees-create`, and the function `gwwca`, which runs it with the usual patterns (`[0-9]*.[0-9]*.x`, `disclosure/*`, `release/*`, `main`, `docs-build`) and then creates a worktree for `docs-build` from the `commercial` remote (skipped if that remote does not exist). Extra options given to `gwwca` are passed on to the first run.
+The plugin also defines the alias `gwwc` for `git-worktrees-create`, and the function `gwwca`, which runs it with the usual patterns (`[0-9]*.[0-9]*.x`, `disclosure/*`, `release/*`, `main`, `docs-build`) and then creates a worktree for `docs-build` from the `commercial` remote (skipped if that remote does not exist). The only option `gwwca` accepts is `--dry-run`, which is passed to both runs.
 
 [source,bash]
 ----
@@ -44,6 +44,7 @@ Quote globs so the shell does not expand them. `*` also matches `/`, so `disclos
 * `--remote REMOTE` - Specify the remote name (default: repository owner auto-detected from directory structure)
 * `--name-prefix PREFIX` - Prepend `PREFIX` to the local branch name and the worktree directory, for a remote whose branch names clash with local ones (`commercial/docs-build` becomes `commercial-docs-build`)
 * `--skip-missing-remote` - If the remote does not exist, say so and exit 0
+* `--dry-run` - Show what would be created without fetching or creating anything (uses the branches already fetched)
 * `--help` - Display help message
 
 === Examples
