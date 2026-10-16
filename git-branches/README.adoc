@@ -51,6 +51,8 @@ gbbmf $(svaob)
 gbbr rebase $(ghmr)
 ----
 
+Two functions fill in `$(svaob) --releases $(ghmr)` for you and pass any extra options on: `gbbfa` for `gbbf` and `gbbcma` for `gbbcm`.
+
 [#aliases]
 == Aliases
 

@@ -28,6 +28,8 @@ To fill in the branches and releases, use the `svaob` alias of link:../../spring
 gbbf $(svaob) --releases $(ghmr)
 ----
 
+The alias function `gbbfa` runs exactly that, and passes any extra options on, for example `gbbfa --disclosures`.
+
 == Usage
 
 [source,bash]
