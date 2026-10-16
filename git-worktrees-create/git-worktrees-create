@@ -186,6 +186,8 @@ while IFS= read -r line; do
 done < <(git worktree list --porcelain)
 
 # Process each branch
+failed=0
+matched_any=0
 for remote_branch in ${(f)remote_branches}; do
 	# Does the branch match one of the patterns?
 	matched=0
@@ -196,6 +198,7 @@ for remote_branch in ${(f)remote_branches}; do
 		fi
 	done
 	(( matched )) || continue
+	matched_any=1
 
 	branch="${name_prefix}${remote_branch}"
 	worktree_path="${base}/${branch}"
@@ -216,6 +219,7 @@ for remote_branch in ${(f)remote_branches}; do
 			echo "  → Creating local branch '$branch' tracking '$remote/$remote_branch'"
 			if ! git branch --track "$branch" "$remote/$remote_branch"; then
 				echo "  ✗ Failed to create local branch '$branch'" >&2
+				(( failed++ ))
 				continue
 			fi
 		fi
@@ -226,9 +230,18 @@ for remote_branch in ${(f)remote_branches}; do
 			echo "  ✓ Successfully created worktree: $shown_path"
 		else
 			echo "  ✗ Failed to create worktree at $shown_path" >&2
+			(( failed++ ))
 		fi
 	fi
 	echo ""
 done
 
+if (( ! matched_any )); then
+	echo "Warning: no branches of '$remote' match: ${patterns[*]}"
+fi
+
+if (( failed )); then
+	echo "Done, $failed failed"
+	exit 1
+fi
 echo "Done!"

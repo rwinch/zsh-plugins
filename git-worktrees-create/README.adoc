@@ -15,6 +15,7 @@ This plugin provides a command to automatically create git worktrees for all mat
 * Skips branches that are already checked out in a worktree, and existing worktrees, with informative messages
 * Auto-detects repository owner from `~/code` directory structure
 * Validates git repository and remote existence before processing
+* Ends with `Done, N failed` and exit status 1 if a branch or worktree could not be created, and warns when no branch matches the patterns
 
 == Installation
 
