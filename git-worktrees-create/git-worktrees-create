@@ -164,6 +164,17 @@ echo ""
 # Get all remote branches
 remote_branches=$(git branch -r | grep "^  $remote/" | sed "s|^  $remote/||" | grep -v "HEAD")
 
+# Worktrees are siblings of the current worktree. For a slashed branch
+# (release/1.0) the worktree lives deeper, so strip the current branch name
+# from the root when it matches.
+root=$(git rev-parse --show-toplevel)
+cur=$(git symbolic-ref --short -q HEAD)
+if [[ -n "$cur" && "$root" == */"$cur" ]]; then
+	base="${root%/$cur}"
+else
+	base="${root:h}"
+fi
+
 # Branches already checked out in some worktree: branch -> worktree path
 typeset -A checked_out
 wt=""
@@ -187,13 +198,14 @@ for remote_branch in ${(f)remote_branches}; do
 	(( matched )) || continue
 
 	branch="${name_prefix}${remote_branch}"
-	worktree_path="../${branch}"
+	worktree_path="${base}/${branch}"
+	shown_path="../${branch}"
 
 	# Check if the branch is already checked out, or a worktree already exists
 	if [[ -n "${checked_out[$branch]}" ]]; then
 		echo "✓ Already checked out: ${checked_out[$branch]} (branch $branch)"
 	elif [[ -e "$worktree_path/.git" ]]; then
-		echo "✓ Worktree already exists: $worktree_path"
+		echo "✓ Worktree already exists: $shown_path"
 	else
 		echo "Processing branch: $remote_branch"
 
@@ -209,11 +221,11 @@ for remote_branch in ${(f)remote_branches}; do
 		fi
 
 		# Create worktree
-		echo "  → Creating worktree at $worktree_path"
+		echo "  → Creating worktree at $shown_path"
 		if git worktree add "$worktree_path" "$branch"; then
-			echo "  ✓ Successfully created worktree: $worktree_path"
+			echo "  ✓ Successfully created worktree: $shown_path"
 		else
-			echo "  ✗ Failed to create worktree at $worktree_path" >&2
+			echo "  ✗ Failed to create worktree at $shown_path" >&2
 		fi
 	fi
 	echo ""
