@@ -117,7 +117,5 @@ Done!
 
 == Related Plugins
 
-* link:../git-url[git-url] - Generate GitHub repository URLs
-* link:../git-add-remote[git-add-remote] - Add git remotes easily
 * link:../git-clone-convention[git-clone-convention] - Clone repositories following conventions
 

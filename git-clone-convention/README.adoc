@@ -1,228 +1,147 @@
 = git-clone-convention
 
-A zsh plugin that provides a smart `clone` function for cloning Git repositories with intelligent directory management and integration with link:../git-url[git-url].
+A zsh plugin that provides `clone`, which clones a Git repository into `~/code/${owner}/${repository}/${branch}`, names the remotes so that the OSS and commercial repositories line up with the other tools here (`oss` and `commercial`), and changes into the clone.
 
 == Features
 
-* *Integrates with git-url*: Uses the `git-url` command to generate repository URLs from various input formats
-* *Smart Directory Structure*: Clones repositories into `~/code/${owner}/${repository}/${branch}` following a consistent convention
-* *Custom Remote Names*: Sets the remote name to the repository owner instead of "origin"
-* *Existence Check*: Detects if a repository already exists and navigates to it instead of re-cloning
-* *Automatic Branch Detection*: Detects the default branch and organizes the directory accordingly
-* *Automatic Directory Change*: Changes to the cloned repository directory after successful clone (works in your current shell since `clone` is a function, not a script)
-* *wd Integration*: Automatically creates shortcuts using the `wd` command for spring-prefixed owners and repositories (if `wd` is available)
+* Clones into `~/code/${owner}/${repository}/${branch}`, named after the repository's actual default branch
+* When `${owner}/${repository}-commercial` exists as a private repository, the remotes are `oss` (the clone) and `commercial` (added and fetched after the clone), the names link:../gh-milestones[gh-milestones] and the link:../git-branches[git-branches] commands expect
+* Otherwise the remote is named after the owner instead of `origin`
+* Adds your fork (`${login}/${repository}`) as a remote named after your login, when it exists
+* Detects an existing clone and changes into it instead of cloning
+* `--dry-run` looks everything up and prints the plan, and changes nothing
+* Adds link:https://github.com/mfaerevaag/wd[wd] shortcuts (when `wd` is available)
+* Nothing is ever created on GitHub
 
 == Requirements
 
-This plugin requires the https://github.com/rwinch/zsh-plugins/tree/main/git-url[git-url] plugin to be installed and available in your PATH.
+* `gh` (optional). It is used to find the commercial repository, your login and your fork. Without it, or when it fails (not logged in, no network), those steps are skipped with a warning and the remote is named after the owner.
+* `wd` (optional) for the shortcuts.
 
 == Installation
 
-=== Using Antigen
-
-Add the following lines to your `.antigenrc` or `.zshrc`:
-
 [source,bash]
 ----
-# Load git-url (required dependency)
-antigen bundle rwinch/zsh-plugins --loc=git-url
-
-# Load git-clone-convention
-antigen bundle rwinch/zsh-plugins --loc=git-clone-convention
+antigen bundle rwinch/zsh-plugins git-clone-convention
 ----
 
-*Important*: The `git-url` plugin must be loaded before `git-clone-convention`.
-
-=== Manual Installation
-
-1. Clone or download both the `git-url` and `git-clone-convention` plugins
-2. Source the plugin files in your `.zshrc`:
-
-[source,bash]
-----
-source /path/to/git-url/git-url.plugin.zsh
-source /path/to/git-clone-convention/git-clone-convention.plugin.zsh
-----
+`clone` is a function, not a script, so that the `cd` (and the `wd` shortcuts) happen in your current shell. The function runs the `git-clone-convention` script, which does everything else and prints where to go.
 
 == Usage
 
 [source,bash]
 ----
-clone [GIT-URL-OPTIONS] [GIT-CLONE-OPTIONS]
+clone [OPTIONS] OWNER/REPOSITORY|URL [GIT-CLONE-OPTIONS]
 ----
 
-=== Git-URL Options
+The repository is the first argument that is not an option (or the value of one): an `OWNER/REPOSITORY` slug or a full SSH or HTTPS URL, with or without `.git`.
 
-These options are passed to `git-url` to generate the repository URL:
+|===
+|Option |Description
 
-* `--https` - Use HTTPS URL format instead of SSH (default: SSH)
-* `--host HOST` - Specify the Git host domain (default: github.com)
-* `--gitlab` - Shortcut for --host gitlab.com
-* `--owner OWNER` - Override the repository owner
-* `--repository REPO` - Override the repository name
-* `OWNER/REPOSITORY` - GitHub slug in the format owner/repository
-* `URL` - Full SSH or HTTPS URL
+|`--dry-run`
+|Look up everything and print the plan. Nothing is cloned. (There is no `-n` because that is `git clone --no-checkout`.)
 
-=== Git-Clone Options
+|`--https`
+|Use HTTPS URLs instead of SSH (the default). Also applies to the `commercial` and fork remotes.
 
-Any other options are passed directly to `git clone`:
+|`--host HOST`
+|Git host, default `github.com`.
 
-* `--branch BRANCH` - Clone a specific branch
-* `--depth N` - Create a shallow clone with history truncated to N commits
-* `--single-branch` - Clone only one branch
-* And any other `git clone` options
+|`--gitlab`
+|Shortcut for `--host gitlab.com`.
+
+|`--help`, `-h`
+|Show help.
+|===
+
+Every other option is passed to `git clone` (`--branch`, `--depth`, `--single-branch`, ...). `clone` chooses the remote name and the directory itself, so `--origin` and a directory argument are rejected.
 
 == Behavior
 
-1. *Existence Check*: Before cloning, checks if `~/code/${owner}/${repository}` already exists
-   - If it exists, outputs a message and changes directory to:
-     * `~/code/${owner}/${repository}/main` (first priority)
-     * `~/code/${owner}/${repository}/master` (fallback)
-     * `~/code/${owner}/${repository}` (final fallback)
+. *Already cloned*: when `~/code/${owner}/${repository}` exists, `clone` changes into `main`, else `master`, else the repository directory, and does nothing else (no lookups, no remotes, no shortcuts).
+. *Lookups* (github.com only, before anything is created): your login, whether `${owner}/${repository}-commercial` exists and is private, and whether `${login}/${repository}` exists (skipped when you are the owner). A repository that is not found is a normal answer. If `gh` is missing or a lookup fails, the lookups are skipped and a warning is printed.
+. *Remotes*:
++
+|===
+|Situation |Remotes
 
-2. *Directory Structure*: Clones into `~/code/${owner}/${repository}/main` initially
-   - Detects the actual default branch of the repository
-   - Renames the directory to match the actual default branch if different from 'main'
+|No commercial repository
+|`${owner}`
 
-3. *Remote Naming*: Sets the remote name to the repository owner (extracted from the URL) instead of 'origin'
+|Commercial repository
+|`oss`, `commercial`
 
-4. *Directory Navigation*: Automatically changes to `~/code/${owner}/${repository}/${branch}` after cloning (works in your current shell since `clone` is a function, not a script)
-
-5. *wd Shortcuts* (if `wd` command is available):
-   - If the owner starts with `spring-`, creates a shortcut with the prefix removed
-     * Example: `spring-projects` → `wd projects` points to `~/code/spring-projects`
-   - If the repository starts with `spring-`, creates a shortcut with the prefix removed
-     * Example: `spring-security` → `wd security` points to `~/code/spring-projects/spring-security/main`
+|Fork exists
+|plus `${login}`
+|===
+. *Clone* into `~/code/${owner}/${repository}/main`, then add and fetch `commercial` and the fork. The directory is renamed to the default branch when that is not `main`. If the clone fails, what was created is removed.
+. *wd shortcuts*:
+** an owner starting with `spring-` gets a shortcut without the prefix to `~/code/${owner}` (`spring-projects` is `projects`)
+** a repository starting with `spring-` gets a shortcut without the prefix to the clone (`spring-security` is `security`)
+** any other repository gets a shortcut with its full name to the clone
+** an existing shortcut with the same name is left alone and a warning is printed
+** without `wd`, a note says no shortcuts will be added
 
 == Examples
-
-=== Basic Usage
-
-Clone a GitHub repository using owner/repository format:
-
-[source,bash]
-----
-clone spring-projects/spring-security
-----
-
-This will:
-
-* Generate the URL: `git@github.com:spring-projects/spring-security.git`
-* Clone into: `~/code/spring-projects/spring-security/main` (or the actual default branch)
-* Set remote name to: `spring-projects`
-* Change directory to: `~/code/spring-projects/spring-security/main`
-* Create wd shortcuts (if `wd` is available):
-  - `wd projects` → `~/code/spring-projects`
-  - `wd security` → `~/code/spring-projects/spring-security/main`
-
-=== Using HTTPS
-
-[source,bash]
-----
-clone --https spring-projects/spring-security
-----
-
-=== GitLab Repository
-
-[source,bash]
-----
-clone --gitlab mygroup/myproject
-----
-
-=== Custom Host
-
-[source,bash]
-----
-clone --host bitbucket.org myteam/myrepo
-----
-
-=== With Git Clone Options
-
-Clone with shallow history:
-
-[source,bash]
-----
-clone spring-projects/spring-security --depth 1
-----
-
-Clone a specific branch:
-
-[source,bash]
-----
-clone --branch 5.8.x spring-projects/spring-security
-----
-
-=== Auto-detection from Current Directory
-
-If you're already in a `~/code/owner/repository` directory, you can use `git-url` auto-detection:
-
-[source,bash]
-----
-cd ~/code/spring-projects/spring-security/main
-clone  # Will clone spring-projects/spring-security
-----
-
-=== Existing Repository
-
-If the repository already exists:
 
 [source,bash]
 ----
 $ clone spring-projects/spring-security
-Repository already exists at /Users/username/code/spring-projects/spring-security
-Changing directory to /Users/username/code/spring-projects/spring-security/main
+Cloning git@github.com:spring-projects/spring-security.git into ~/code/spring-projects/spring-security/main with remote name 'oss'
+Adding remote commercial: git@github.com:spring-projects/spring-security-commercial.git
+Adding remote rwinch: git@github.com:rwinch/spring-security.git
+Adding wd shortcut: projects -> ~/code/spring-projects
+Adding wd shortcut: security -> ~/code/spring-projects/spring-security/main
+Changed directory to ~/code/spring-projects/spring-security/main
+----
+
+[source,bash]
+----
+$ clone --dry-run spring-projects/spring-security
+Looking up spring-projects/spring-security-commercial... found (private)
+Looking up rwinch/spring-security (fork)... found
+
+Plan (clone):
+  directory   ~/code/spring-projects/spring-security/main
+  branch      main (default branch)
+
+  remote      url
+  oss         git@github.com:spring-projects/spring-security.git
+  commercial  git@github.com:spring-projects/spring-security-commercial.git
+  rwinch      git@github.com:rwinch/spring-security.git
+
+  wd          projects -> ~/code/spring-projects
+  wd          security -> ~/code/spring-projects/spring-security/main
+
+Dry run, nothing was cloned.
+----
+
+[source,bash]
+----
+clone --https spring-projects/spring-security
+clone --gitlab mygroup/myproject
+clone --branch 5.8.x spring-projects/spring-security
+clone spring-projects/spring-security --depth 1
+clone git@github.com:spring-projects/spring-security.git
 ----
 
 == Directory Structure
-
-The plugin organizes cloned repositories in the following structure:
 
 ----
 ~/code/
   └── ${owner}/
       └── ${repository}/
           └── ${branch}/
-              └── (repository contents)
 ----
 
-For example:
+== Output
 
-----
-~/code/
-  └── spring-projects/
-      └── spring-security/
-          └── main/
-              ├── .git/
-              ├── README.md
-              └── ...
-----
+The script writes everything meant for people to stderr. Its stdout is for the `clone` function: the directory to change into on the first line, then one `wd<TAB>NAME<TAB>PATH` line for each shortcut to add (`wd addcd PATH NAME`). The script sees `wd` only when `GIT_CLONE_CONVENTION_WD=1` is set, which the function does.
 
-If the default branch is `master` instead of `main`, the directory will be named accordingly:
-
-----
-~/code/
-  └── spring-projects/
-      └── spring-framework/
-          └── master/
-              └── ...
-----
-
-== Remote Configuration
-
-Unlike standard `git clone` which creates a remote named `origin`, this plugin names the remote after the repository owner:
+== Tests
 
 [source,bash]
 ----
-$ clone spring-projects/spring-security
-$ cd ~/code/spring-projects/spring-security/main
-$ git remote -v
-spring-projects	git@github.com:spring-projects/spring-security.git (fetch)
-spring-projects	git@github.com:spring-projects/spring-security.git (push)
+zsh test/test.sh
 ----
-
-This makes it easier to add additional remotes (like your fork) without naming conflicts.
-
-== License
-
-This plugin is provided as-is for use in your zsh environment.
-

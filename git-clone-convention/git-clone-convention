@@ -1,0 +1,374 @@
+#!/bin/zsh
+
+# ---- options ----
+dry_run=0                # --dry-run
+use_https=0              # --https
+host="github.com"        # --host, --gitlab
+repo_arg=""              # the OWNER/REPOSITORY slug or URL
+typeset -a clone_args    # everything else, passed to git clone
+
+# ---- derived ----
+proto="ssh"
+owner=""
+repo=""
+clone_url=""
+code_root="$HOME/code"
+wd_config="${WD_CONFIG:-$HOME/.warprc}"
+
+# ---- lookups ----
+login=""
+use_commercial=0
+use_fork=0
+lk_private=""
+lk_error=""
+
+typeset -a rnames        # remotes to end up with, parallel to rurls
+typeset -a rurls
+typeset -a wd_names      # wd shortcuts to add, parallel to wd_paths
+typeset -a wd_paths
+typeset -a wd_warnings
+
+# Options of git clone that take a separate value, so the value is not mistaken for the repository
+typeset -a value_opts
+value_opts=(-b --branch --depth --reference --reference-if-able -c --config -j --jobs --filter
+	--separate-git-dir --template -u --upload-pack --server-option --shallow-since
+	--shallow-exclude --revision --bundle-uri --ref-format)
+
+usage() {
+	cat >&2 <<EOF
+Usage: clone [OPTIONS] OWNER/REPOSITORY|URL [GIT-CLONE-OPTIONS]
+
+Clone a repository into ~/code/OWNER/REPOSITORY/BRANCH, or change into it when it
+is already there. Run through the 'clone' function of the git-clone-convention
+plugin so the shell changes directory too.
+
+The remote is named after the owner. When OWNER/REPOSITORY-commercial exists as a
+private repository, the remotes are 'oss' (the clone) and 'commercial' instead. When
+you have a fork of the repository, it is added as a remote named after your login.
+These lookups use the gh command and are skipped (with a warning) when gh is
+missing or fails, and for hosts other than github.com. Nothing is created on GitHub.
+
+OPTIONS:
+  --dry-run            Look everything up and print what would happen. Nothing is cloned.
+  --https              Use HTTPS URLs instead of SSH (default: SSH)
+  --host HOST          Git host (default: github.com)
+  --gitlab             Shortcut for --host gitlab.com
+  --help, -h           Display this help message
+
+Every other option is passed to git clone (for example --branch 5.8.x or --depth 1).
+The remote name and the directory are chosen by clone, so --origin and a directory
+argument are not accepted.
+
+wd shortcuts (when wd is available):
+  - an owner starting with 'spring-' gets a shortcut without the prefix to ~/code/OWNER
+  - a repository starting with 'spring-' gets a shortcut without the prefix to the clone
+  - any other repository gets a shortcut with its full name to the clone
+  An existing shortcut with the same name is left alone and a warning is printed.
+
+EXAMPLES:
+  clone spring-projects/spring-security
+  clone --dry-run spring-projects/spring-security
+  clone --https spring-projects/spring-security
+  clone --gitlab mygroup/myproject
+  clone --branch 5.8.x spring-projects/spring-security
+  clone spring-projects/spring-security --depth 1
+  clone git@github.com:spring-projects/spring-security.git
+
+OUTPUT:
+  Everything for humans goes to stderr. stdout is for the clone function: the directory to
+  change into on the first line, then one 'wd<TAB>NAME<TAB>PATH' line per shortcut to add.
+  Set GIT_CLONE_CONVENTION_WD=1 when wd is available (the clone function does this).
+EOF
+}
+
+die() {
+	print -ru2 -- "Error: $1"
+	print -ru2 -- "Run 'git-clone-convention --help' for usage."
+	exit 1
+}
+
+warn() { print -ru2 -- "Warning: $1" }
+
+tilde() { print -r -- "${1/#$HOME/~}" }
+
+# Echoes the URL of OWNER REPO on the chosen host and protocol.
+mkurl() {
+	if [[ $proto == ssh ]]; then
+		print -r -- "git@$host:$1/$2.git"
+	else
+		print -r -- "https://$host/$1/$2.git"
+	fi
+}
+
+# lookup OWNER REPO: 0 found (sets lk_private), 1 not found, 2 error (sets lk_error).
+lookup() {
+	local out rc
+	out=$(gh api "repos/$1/$2" --jq '.private' 2>&1); rc=$?
+	if (( rc == 0 )); then
+		lk_private="$out"
+		return 0
+	fi
+	if [[ $out == *404* || $out == *"Not Found"* ]]; then
+		return 1
+	fi
+	lk_error="${out%%$'\n'*}"
+	return 2
+}
+
+# Echoes the path of the existing wd shortcut NAME, fails when there is none.
+wd_existing() {
+	[[ -r $wd_config ]] || return 1
+	local l
+	while IFS= read -r l; do
+		if [[ $l == "$1":* ]]; then
+			print -r -- "${l#*:}"
+			return 0
+		fi
+	done < "$wd_config"
+	return 1
+}
+
+# Fills wd_names/wd_paths (and wd_warnings) for a clone in directory $1.
+plan_wd() {
+	local clone_dir="$1" owner_dir="$code_root/$owner"
+	local -a names paths
+	if [[ $owner == spring-* ]]; then
+		names+=("${owner#spring-}"); paths+=("$owner_dir")
+	fi
+	if [[ $repo == spring-* ]]; then
+		names+=("${repo#spring-}"); paths+=("$clone_dir")
+	else
+		names+=("$repo"); paths+=("$clone_dir")
+	fi
+	wd_names=(); wd_paths=(); wd_warnings=()
+	if [[ -z "$GIT_CLONE_CONVENTION_WD" ]]; then
+		(( ${#names} )) && wd_warnings+=("wd is not installed, so no shortcuts will be added (${(j:, :)names})")
+		return
+	fi
+	local i existing
+	for (( i=1; i<=${#names}; i++ )); do
+		if existing=$(wd_existing "${names[$i]}"); then
+			wd_warnings+=("wd shortcut '${names[$i]}' already exists (-> $existing), not changed")
+		else
+			wd_names+=("${names[$i]}"); wd_paths+=("${paths[$i]}")
+		fi
+	done
+}
+
+# ---- arguments ----
+while (( $# )); do
+	case $1 in
+		--dry-run) dry_run=1; shift ;;
+		--https) use_https=1; shift ;;
+		--gitlab) host="gitlab.com"; shift ;;
+		--host)
+			[[ -n "$2" && "$2" != -* ]] || die "--host requires a value"
+			host="$2"; shift 2 ;;
+		--host=*) host="${1#--host=}"; shift ;;
+		--help|-h) usage; exit 0 ;;
+		--origin|-o|--origin=*) die "clone chooses the remote names itself, $1 is not supported" ;;
+		-*)
+			clone_args+=("$1")
+			if (( ${value_opts[(Ie)$1]} )); then
+				(( $# >= 2 )) || die "$1 requires a value"
+				clone_args+=("$2"); shift
+			fi
+			shift ;;
+		*)
+			[[ -z "$repo_arg" ]] || die "Unexpected argument '$1' (clone chooses the directory itself)"
+			repo_arg="$1"; shift ;;
+	esac
+done
+
+[[ -n "$repo_arg" ]] || die "Missing OWNER/REPOSITORY or URL"
+(( use_https )) && proto="https"
+
+repo_path=""
+if [[ $repo_arg =~ '^git@([^:]+):(.+)$' ]]; then
+	host="${match[1]}"; repo_path="${match[2]}"; proto="ssh"; clone_url="$repo_arg"
+elif [[ $repo_arg =~ '^ssh://([^@/]+@)?([^/]+)/(.+)$' ]]; then
+	host="${match[2]%%:*}"; repo_path="${match[3]}"; proto="ssh"; clone_url="$repo_arg"
+elif [[ $repo_arg =~ '^https?://([^/]+)/(.+)$' ]]; then
+	host="${match[1]}"; repo_path="${match[2]}"; proto="https"; clone_url="$repo_arg"
+elif [[ $repo_arg =~ '^[^/]+/[^/]+$' ]]; then
+	repo_path="$repo_arg"
+else
+	die "Invalid repository '$repo_arg'. Expected OWNER/REPOSITORY or a full SSH or HTTPS URL"
+fi
+repo_path="${repo_path%/}"
+repo_path="${repo_path%.git}"
+[[ $repo_path == */* ]] || die "Could not determine the owner and repository of '$repo_arg'"
+owner="${repo_path%%/*}"
+repo="${repo_path#*/}"
+[[ -n "$owner" && -n "$repo" ]] || die "Could not determine the owner and repository of '$repo_arg'"
+[[ -n "$clone_url" ]] || clone_url=$(mkurl "$owner" "$repo")
+
+# ---- already cloned: just change into it ----
+base_dir="$code_root/$owner/$repo"
+if [[ -d $base_dir ]]; then
+	if [[ -d $base_dir/main ]]; then
+		target="$base_dir/main"
+	elif [[ -d $base_dir/master ]]; then
+		target="$base_dir/master"
+	else
+		target="$base_dir"
+	fi
+	print -ru2 -- "Repository already exists at $(tilde $base_dir)"
+	if (( dry_run )); then
+		print -ru2 -- "Would change directory to $(tilde $target)"
+		print -ru2 -- "Dry run, nothing was changed."
+		exit 0
+	fi
+	print -r -- "$target"
+	exit 0
+fi
+
+# ---- gh lookups, all before anything is created ----
+commercial_repo="$repo-commercial"
+if [[ $host == github.com ]]; then
+	if (( ! $+commands[gh] )); then
+		warn "gh is not installed, skipping the commercial and fork lookups"
+	else
+		gh_ok=1
+		if ! login=$(gh api user --jq .login 2>&1); then
+			warn "gh lookup failed (${login%%$'\n'*}), skipping the commercial and fork lookups"
+			login=""; gh_ok=0
+		fi
+		if (( gh_ok )); then
+			(( dry_run )) && print -nu2 -- "Looking up $owner/$commercial_repo... "
+			lookup "$owner" "$commercial_repo"; rc=$?
+			if (( rc == 0 )); then
+				if [[ $lk_private == true ]]; then
+					use_commercial=1
+					(( dry_run )) && print -ru2 -- "found (private)"
+				else
+					(( dry_run )) && print -ru2 -- "found (public, ignored)"
+				fi
+			elif (( rc == 1 )); then
+				(( dry_run )) && print -ru2 -- "not found"
+			else
+				(( dry_run )) && print -ru2 -- "failed"
+				warn "gh lookup failed ($lk_error), skipping the commercial and fork lookups"
+				gh_ok=0; use_commercial=0
+			fi
+		fi
+		if (( gh_ok )) && [[ $login != $owner ]]; then
+			(( dry_run )) && print -nu2 -- "Looking up $login/$repo (fork)... "
+			lookup "$login" "$repo"; rc=$?
+			if (( rc == 0 )); then
+				use_fork=1
+				(( dry_run )) && print -ru2 -- "found"
+			elif (( rc == 1 )); then
+				(( dry_run )) && print -ru2 -- "not found"
+			else
+				(( dry_run )) && print -ru2 -- "failed"
+				warn "gh lookup failed ($lk_error), skipping the commercial and fork lookups"
+				use_commercial=0
+			fi
+		fi
+	fi
+fi
+
+# ---- remotes ----
+remote="$owner"
+(( use_commercial )) && remote="oss"
+rnames=("$remote"); rurls=("$clone_url")
+(( use_commercial )) && { rnames+=("commercial"); rurls+=("$(mkurl "$owner" "$commercial_repo")") }
+(( use_fork )) && { rnames+=("$login"); rurls+=("$(mkurl "$login" "$repo")") }
+
+# ---- dry run ----
+if (( dry_run )); then
+	branch=""
+	ref=$(git ls-remote --symref "$clone_url" HEAD 2>/dev/null | sed -n 's/^ref: refs\/heads\/\(.*\)[[:space:]]HEAD$/\1/p')
+	if [[ -n "$ref" ]]; then
+		branch="$ref"; branch_display="$ref (default branch)"
+	else
+		branch="main"; branch_display="unknown (assuming main)"
+	fi
+	plan_wd "$base_dir/$branch"
+	w=6
+	for n in "${rnames[@]}"; do (( ${#n} > w )) && w=${#n}; done
+	print -ru2 -- ""
+	print -ru2 -- "Plan (clone):"
+	print -ru2 -- "  directory   $(tilde $base_dir/$branch)"
+	print -ru2 -- "  branch      $branch_display"
+	print -ru2 -- ""
+	print -ru2 -- "$(printf "  %-${w}s  %s" remote url)"
+	for (( i=1; i<=${#rnames}; i++ )); do
+		print -ru2 -- "$(printf "  %-${w}s  %s" "${rnames[$i]}" "${rurls[$i]}")"
+	done
+	if (( ${#wd_names} )); then
+		print -ru2 -- ""
+		for (( i=1; i<=${#wd_names}; i++ )); do
+			print -ru2 -- "  wd          ${wd_names[$i]} -> $(tilde ${wd_paths[$i]})"
+		done
+	fi
+	for m in "${wd_warnings[@]}"; do
+		print -ru2 -- ""
+		print -ru2 -- "  $m"
+	done
+	print -ru2 -- ""
+	print -ru2 -- "Dry run, nothing was cloned."
+	exit 0
+fi
+
+# ---- clone ----
+owner_dir="$code_root/$owner"
+created_owner_dir=0
+if [[ ! -d $owner_dir ]]; then
+	mkdir -p "$owner_dir" || die "Could not create $owner_dir"
+	created_owner_dir=1
+fi
+
+clone_dir="$base_dir/main"
+print -ru2 -- "Cloning $clone_url into $(tilde $clone_dir) with remote name '$remote'"
+if ! git clone --origin "$remote" "${clone_args[@]}" "$clone_url" "$clone_dir" >&2; then
+	print -ru2 -- "Error: git clone failed"
+	# $base_dir did not exist before this run, so everything in it is ours
+	if [[ -d $base_dir ]]; then
+		print -ru2 -- "Removing repository directory: $(tilde $base_dir)"
+		rm -rf "$base_dir"
+	fi
+	if (( created_owner_dir )) && rmdir "$owner_dir" 2>/dev/null; then
+		print -ru2 -- "Removed owner directory: $(tilde $owner_dir)"
+	fi
+	exit 1
+fi
+
+for (( i=2; i<=${#rnames}; i++ )); do
+	print -ru2 -- "Adding remote ${rnames[$i]}: ${rurls[$i]}"
+	git -C "$clone_dir" remote add -f "${rnames[$i]}" "${rurls[$i]}" >&2 \
+		|| warn "Could not add remote ${rnames[$i]}"
+done
+
+# The actual default branch names the directory
+branch=$(git -C "$clone_dir" symbolic-ref --short "refs/remotes/$remote/HEAD" 2>/dev/null)
+branch="${branch#$remote/}"
+[[ -n "$branch" ]] || branch=$(git -C "$clone_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [[ -z "$branch" ]]; then
+	warn "Could not determine the default branch, assuming 'main'"
+	branch="main"
+fi
+
+final_dir="$clone_dir"
+if [[ $branch != main ]]; then
+	final_dir="$base_dir/$branch"
+	if [[ -e $final_dir ]]; then
+		print -ru2 -- "Error: cannot rename $(tilde $clone_dir) to $(tilde $final_dir), it already exists"
+		exit 1
+	fi
+	print -ru2 -- "Renaming directory to match default branch: $branch"
+	mv "$clone_dir" "$final_dir" || { print -ru2 -- "Error: rename failed"; exit 1 }
+fi
+
+plan_wd "$final_dir"
+for m in "${wd_warnings[@]}"; do warn "$m"; done
+for (( i=1; i<=${#wd_names}; i++ )); do
+	print -ru2 -- "Adding wd shortcut: ${wd_names[$i]} -> $(tilde ${wd_paths[$i]})"
+done
+
+# stdout: the directory to change into, then the wd shortcuts to add
+print -r -- "$final_dir"
+for (( i=1; i<=${#wd_names}; i++ )); do
+	print -r -- "wd"$'\t'"${wd_names[$i]}"$'\t'"${wd_paths[$i]}"
+done
