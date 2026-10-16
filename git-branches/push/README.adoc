@@ -1,0 +1,88 @@
+= git-branches-push
+
+A zsh plugin that pushes several branches in one go, with `--disclosures` and `--releases` support like link:../pull[git-branches-pull] and link:../merge-forward[git-branches-merge-forward]. It is the one plugin of the group that pushes, and it only does so after everything has been validated.
+
+== Features
+
+* `git branches-push 7.0.x main` pushes every branch that is ahead of its upstream
+* One `git push --atomic` per remote (an atomic push cannot span remotes), so a remote gets all of its branches or none
+* `--disclosures` also pushes `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
+* `--releases` also pushes `release/<version>`. A release that has diverged from its upstream (it was rebuilt, for example by link:../release[git-branches-release]) is forced with a lease on the sha it had at the last fetch, so a push of somebody else's work is rejected
+* Never fetches or pulls: it compares against the state of the last fetch
+* Branches that already match their upstream are skipped, and when nothing is left it says so and exits 0
+* `--dry-run` validates and prints the plan and the push commands, and pushes nothing
+* Everything is validated first and all problems are reported together: the branch exists locally, has an upstream that still exists, and is not behind it. A diverged branch is a problem too, except a release
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-branches/push
+----
+
+The plugin also defines the alias `gbbph` for `git-branches-push`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
+
+To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] and the `ghmr` function of link:../../gh-milestones[gh-milestones]:
+
+[source,bash]
+----
+gbbph $(svaob) --releases $(ghmr)
+----
+
+== Usage
+
+[source,bash]
+----
+git branches-push [OPTIONS] BRANCH [BRANCH ...]
+git branches-push [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git branches-push [OPTIONS] --releases VERSION[,VERSION ...]
+----
+
+|===
+|Option |Description
+
+|`--dry-run`, `-n`
+|Validate and print the plan and the push commands. Nothing is pushed.
+
+|`--disclosures`, `-d`
+|Arguments are OSS generations. Each is pushed with its disclosure frozen and active branches. `--disclosure` is accepted too.
+
+|`--releases`, `-r LIST`
+|Comma separated release versions, for example `7.0.1,7.0.1.1,7.1.0-RC1`.
+
+|`--help`, `-h`
+|Show help.
+|===
+
+== Example
+
+[source,text]
+----
+$ gbbph $(svaob) --releases 7.0.1,7.1.0
+Plan:
+  oss
+    7.0.x          ahead 2
+    main           ahead 1
+  commercial
+    release/7.0.1  diverged, forced (force-with-lease 3f9a1c2)
+    release/7.1.0  diverged, forced (force-with-lease 8b2d4e1)
+
+Pushing oss ... done
+Pushing commercial ... done
+Done. Pushed 2 branch(es) and 2 release(s).
+----
+
+== Tests
+
+[source,bash]
+----
+zsh test/test.sh
+zsh test/test.sh lease
+DEBUG=1 zsh test/test.sh
+----
+
+== Related Plugins
+
+* link:../merge-forward[git-branches-merge-forward]
+* link:../release[git-branches-release]
+* link:../pull[git-branches-pull]

@@ -1,6 +1,6 @@
 = git-branches
 
-A group of zsh plugins that work on several branches at once, optionally expanding OSS generations with `--disclosures` into their `disclosure/frozen/<generation>` and `disclosure/active/<generation>` branches. All of them validate everything first, report all problems together and never push.
+A group of zsh plugins that work on several branches at once, optionally expanding OSS generations with `--disclosures` into their `disclosure/frozen/<generation>` and `disclosure/active/<generation>` branches. All of them validate everything first, report all problems together, and only link:push[git-branches-push] pushes.
 
 They share the command prefix `git-branches-`, so `git branches-<TAB>` lists them all.
 
@@ -13,13 +13,14 @@ They share the command prefix `git-branches-`, so `git branches-<TAB>` lists the
 |link:check-merged[git-branches-check-merged] |`gbbcm` |Check that a chain of branches is merged forward
 |link:merge-forward[git-branches-merge-forward] |`gbbmf` |Merge a chain of branches forward
 |link:release[git-branches-release] |`gbbr` |Rebuild `release/<version>` branches on their disclosure base
+|link:push[git-branches-push] |`gbbph` |Push the branches that are ahead of their upstream, forcing rebuilt releases with a lease
 |===
 
 A typical run goes fetch, pull (or reset-to-upstream), check-merged, merge-forward, push, then release.
 
 == Installation
 
-Load all six:
+Load all seven:
 
 [source,bash]
 ----
