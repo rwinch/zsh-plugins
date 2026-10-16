@@ -1,0 +1,177 @@
+#!/bin/zsh
+
+# ---- options ----
+dry_run=0                       # --dry-run
+oss_remote="oss"                # --oss-remote
+commercial_remote="commercial"  # --commercial-remote
+typeset -a generations          # positional args, in order
+
+# ---- the plan: parallel arrays, one entry per branch to create ----
+typeset -a new_branch
+typeset -a new_source           # <oss remote>/<generation>
+typeset -a new_sha
+typeset -a problems
+
+nl=$'\n'
+
+usage() {
+	cat <<EOF
+Usage: git-branches-disclosure-create [OPTIONS] GENERATION [GENERATION ...]
+
+Creates disclosure/frozen/<generation> and disclosure/active/<generation> at
+the OSS branch <generation> (7.0.x main) for every generation, with their upstream
+set to the same branch on the commercial remote. The commercial branches do not
+exist yet, so nothing is pushed: the git push command is printed.
+
+Everything is validated before anything is created, and all problems are reported
+together: both remotes exist, the OSS branch exists, the local disclosure branches
+do not exist yet, and the commercial disclosure branches do not exist yet (track
+those with git branch --track instead). Nothing is fetched, run git-branches-fetch
+first.
+
+OPTIONS:
+  --oss-remote REMOTE         The OSS remote (default: oss)
+  --commercial-remote REMOTE  The commercial remote (default: commercial)
+  --dry-run, -n               Validate and print the plan. Nothing is created.
+  --help, -h                  Display this help message
+
+EXAMPLES:
+  git-branches-disclosure-create 7.2.x
+  git-branches-disclosure-create 7.2.x main
+  git-branches-disclosure-create --dry-run 7.2.x
+
+REQUIREMENTS:
+  - Must be run from within a git repository
+
+EOF
+}
+
+usage_error() {
+	echo "Error: $1" >&2
+	echo "Run 'git-branches-disclosure-create --help' for usage." >&2
+	exit 1
+}
+
+problem() {
+	problems+=("$1")
+}
+
+fail_if_problems() {
+	[[ ${#problems[@]} -eq 0 ]] && return 0
+	local p first l
+	echo "Error: ${#problems[@]} problem(s) found. Nothing was created:" >&2
+	for p in "${problems[@]}"; do
+		first=1
+		for l in "${(@f)p}"; do
+			if (( first )); then
+				echo "  - $l" >&2
+				first=0
+			else
+				echo "      $l" >&2
+			fi
+		done
+	done
+	exit 1
+}
+
+ref_exists() {
+	git show-ref --verify --quiet "$1"
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--dry-run|-n) dry_run=1; shift ;;
+		--oss-remote|--commercial-remote)
+			if [[ -z "$2" || "$2" == -* ]]; then
+				usage_error "$1 requires a remote name"
+			fi
+			[[ $1 == --oss-remote ]] && oss_remote="$2" || commercial_remote="$2"
+			shift 2
+			;;
+		--help|-h) usage; exit 0 ;;
+		-*) usage_error "Unknown option: $1" ;;
+		*) generations+=("$1"); shift ;;
+	esac
+done
+
+if [[ ${#generations[@]} -eq 0 ]]; then
+	usage_error "At least one generation is required"
+fi
+
+typeset -A seen_arg
+for g in "${generations[@]}"; do
+	if (( ${+seen_arg[$g]} )); then
+		usage_error "Generation '$g' is given more than once"
+	fi
+	seen_arg[$g]=1
+done
+
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
+	exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Validate
+# ---------------------------------------------------------------------------
+for r in "$oss_remote" "$commercial_remote"; do
+	git remote get-url "$r" > /dev/null 2>&1 || problem "remote '$r' does not exist"
+done
+
+for g in "${generations[@]}"; do
+	src="refs/remotes/$oss_remote/$g"
+	if ! ref_exists "$src"; then
+		problem "$oss_remote/$g: does not exist (run git-branches-fetch first)"
+		continue
+	fi
+	sha=$(git rev-parse --short "$src")
+	for role in frozen active; do
+		b="disclosure/$role/$g"
+		bad=0
+		if ref_exists "refs/heads/$b"; then
+			problem "$b: already exists locally"
+			bad=1
+		fi
+		if ref_exists "refs/remotes/$commercial_remote/$b"; then
+			problem "$b: already exists on $commercial_remote${nl}git branch --track $b $commercial_remote/$b"
+			bad=1
+		fi
+		(( bad )) && continue
+		new_branch+=("$b")
+		new_source+=("$oss_remote/$g")
+		new_sha+=("$sha")
+	done
+done
+fail_if_problems
+
+# ---------------------------------------------------------------------------
+# Report, create
+# ---------------------------------------------------------------------------
+w1=0; w2=0
+for (( i = 1; i <= ${#new_branch[@]}; i++ )); do
+	(( ${#new_branch[i]} > w1 )) && w1=${#new_branch[i]}
+	(( ${#new_source[i]} > w2 )) && w2=${#new_source[i]}
+done
+
+if (( dry_run )); then echo "Would create:"; else echo "Creating:"; fi
+for (( i = 1; i <= ${#new_branch[@]}; i++ )); do
+	printf "  %-${w1}s  at %-${w2}s  (%s)  upstream %s/%s (not pushed yet)\n" \
+		"${new_branch[i]}" "${new_source[i]}" "${new_sha[i]}" "$commercial_remote" "${new_branch[i]}"
+done
+echo ""
+
+if (( ! dry_run )); then
+	for (( i = 1; i <= ${#new_branch[@]}; i++ )); do
+		b="${new_branch[i]}"
+		git branch --no-track "$b" "refs/remotes/${new_source[i]}" || { echo "Error: could not create $b" >&2; exit 1; }
+		git config "branch.$b.remote" "$commercial_remote"
+		git config "branch.$b.merge" "refs/heads/$b"
+	done
+	echo "Created ${#new_branch[@]} branch(es). Push them to create the upstream branches:"
+else
+	echo "Dry run, nothing was created. Afterwards, push them to create the upstream branches:"
+fi
+echo "  git push --atomic $commercial_remote ${(j: :)new_branch}"
