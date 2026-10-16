@@ -12,7 +12,7 @@ This plugin provides a command to automatically create git worktrees for all mat
 * `gwwca` runs the usual set of patterns, including `docs-build` from the `commercial` remote
 * Creates worktrees in the parent directory (`../branch-name`)
 * Automatically creates local tracking branches if they don't exist
-* Skips existing worktrees with informative messages
+* Skips branches that are already checked out in a worktree, and existing worktrees, with informative messages
 * Auto-detects repository owner from `~/code` directory structure
 * Validates git repository and remote existence before processing
 
@@ -68,7 +68,7 @@ The command performs the following steps:
 3. Fetches the latest changes from the remote
 4. Iterates through all remote branches
 5. For each branch matching one of the patterns:
-   * Checks if a worktree already exists at `../branch-name`
+   * Checks if the branch is already checked out in a worktree, or a worktree already exists at `../branch-name`
    * If not:
    ** Creates a local tracking branch if it doesn't exist
    ** Creates a worktree at `../branch-name`

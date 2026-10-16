@@ -28,7 +28,8 @@ OPTIONS:
 BEHAVIOR:
   - Fetches the remote, then iterates over all of its branches
   - For each branch that matches a pattern:
-    * If worktree at ../{branch} exists, skips with a message
+    * If the branch is already checked out in a worktree, or a worktree at
+      ../{branch} exists, skips with a message
     * Otherwise:
       - Creates a local tracking branch if it doesn't exist
       - Creates a worktree at ../{branch} tracking the local branch
@@ -163,6 +164,16 @@ echo ""
 # Get all remote branches
 remote_branches=$(git branch -r | grep "^  $remote/" | sed "s|^  $remote/||" | grep -v "HEAD")
 
+# Branches already checked out in some worktree: branch -> worktree path
+typeset -A checked_out
+wt=""
+while IFS= read -r line; do
+	case $line in
+		"worktree "*) wt="${line#worktree }" ;;
+		"branch refs/heads/"*) checked_out[${line#branch refs/heads/}]="$wt" ;;
+	esac
+done < <(git worktree list --porcelain)
+
 # Process each branch
 for remote_branch in ${(f)remote_branches}; do
 	# Does the branch match one of the patterns?
@@ -178,8 +189,10 @@ for remote_branch in ${(f)remote_branches}; do
 	branch="${name_prefix}${remote_branch}"
 	worktree_path="../${branch}"
 
-	# Check if worktree already exists
-	if [[ -d "$worktree_path" ]]; then
+	# Check if the branch is already checked out, or a worktree already exists
+	if [[ -n "${checked_out[$branch]}" ]]; then
+		echo "✓ Already checked out: ${checked_out[$branch]} (branch $branch)"
+	elif [[ -e "$worktree_path/.git" ]]; then
 		echo "✓ Worktree already exists: $worktree_path"
 	else
 		echo "Processing branch: $remote_branch"
