@@ -460,7 +460,8 @@ print_plan() {
 }
 
 # One 'git push --atomic' per remote. Every rebuilt release is forced with a
-# lease on the sha it had when it was fetched.
+# lease on the sha it had when it was fetched. The refspec has no '+': a '+'
+# would override the lease and force the push unconditionally.
 print_push_commands() {
 	local -a remotes refs
 	local i rb r base
@@ -484,7 +485,7 @@ print_push_commands() {
 			[[ "${rel_will[$i]}" -eq 1 ]] || continue
 			[[ "${up_remote[${rel_base[$i]}]}" == "$r" ]] || continue
 			rb="release/${rel_version[$i]}"
-			refs+=("+$rb")
+			refs+=("$rb")
 		done
 		for (( i = 1; i <= ${#rel_version[@]}; i++ )); do
 			[[ "${rel_will[$i]}" -eq 1 ]] || continue

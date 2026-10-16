@@ -151,7 +151,8 @@ t "rebase: release becomes the disclosure branch plus release-only commits" '
 	expect_out "Rebasing release/7.0.1 onto disclosure/frozen/7.0.x \.\.\. done"
 	expect_out "Done\. Push when ready:"
 	expect_out "git push --atomic commercial"
-	expect_out "\+release/7.0.1 "
+	expect_out "^ +release/7.0.1 release/7.0.1.1 --force-with-lease"
+	reject_out "\+release"
 	expect_out "--force-with-lease=release/7.0.1:$old"
 	[[ $(branch_of $W) == 7.0.x ]]
 '
@@ -212,7 +213,7 @@ t "validation: base branch ahead of its upstream" '
 	reject_out "push it first"
 	run rebase 7.0.1; expect_rc 0
 	expect_out "git push --atomic commercial"
-	expect_out "disclosure/frozen/7.0.x \+release/7.0.1 "
+	expect_out "disclosure/frozen/7.0.x release/7.0.1 "
 '
 
 t "validation: dirty worktree and missing upstream together" '
