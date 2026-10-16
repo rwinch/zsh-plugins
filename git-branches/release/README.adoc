@@ -31,6 +31,8 @@ To fill in the versions, use the `ghmr` function of link:../../gh-milestones[gh-
 gbbr $(ghmr)
 ----
 
+`gbbra` runs `git-branches-release rebase $(ghmr)` and passes any extra options on, for example `gbbra --dry-run`.
+
 == Usage
 
 [source,bash]

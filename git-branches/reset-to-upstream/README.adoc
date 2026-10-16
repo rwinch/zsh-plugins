@@ -11,6 +11,7 @@ A zsh plugin that hard resets branches to their remote tracked branches, across 
 * `--dry-run` validates and prints the plan, and changes nothing
 * Everything is validated first (branch exists, has an upstream, worktree clean) and all problems are reported together
 * The SHAs of discarded local commits are printed so they can be recovered
+* `--undo` moves every branch back to where it was before its most recent reset, found in the branch reflog. A branch that has moved since is a problem unless `--force-undo` is used, and a branch with no reset in its reflog is skipped. `--dry-run` works with it
 * Nothing is pushed
 
 == Installation
@@ -28,6 +29,8 @@ To fill in the branches and releases, use the `svaob` alias of link:../../spring
 ----
 gbbrtu $(svaob) --releases $(ghmr)
 ----
+
+`gbbrtua` does that for you and passes any extra options on, so `gbbrtua --dry-run` previews a reset of every OSS branch and release, and `gbbrtua --undo` restores them.
 
 == Usage
 
@@ -50,6 +53,12 @@ git branches-reset-to-upstream [OPTIONS] --releases VERSION[,VERSION ...]
 |`--releases`, `-r LIST`
 |Comma separated release versions, for example `7.0.1,7.0.1.1,7.1.0-RC1`.
 
+|`--undo`, `-u`
+|Move every branch back to where it was before its most recent reset by this command (from the branch reflog). A branch that has moved since is a problem and nothing is undone. A branch with no reset in its reflog is skipped. Takes the same arguments, and honors `--dry-run`.
+
+|`--force-undo`
+|Like `--undo`, but also restores branches that have moved since the reset, discarding the commits made since.
+
 |`--help`, `-h`
 |Show help.
 |===
@@ -61,6 +70,8 @@ git branches-reset-to-upstream [OPTIONS] --releases VERSION[,VERSION ...]
 git branches-reset-to-upstream 7.0.x main
 git branches-reset-to-upstream --dry-run --disclosures 7.0.x 7.1.x main
 git branches-reset-to-upstream -d 7.0.x main -r 7.0.1.1
+git branches-reset-to-upstream --undo --dry-run 7.0.x main
+git branches-reset-to-upstream --undo 7.0.x main
 ----
 
 == Tests

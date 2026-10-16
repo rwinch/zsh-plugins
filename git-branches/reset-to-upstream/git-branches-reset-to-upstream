@@ -2,6 +2,9 @@
 
 # ---- options ----
 dry_run=0                # --dry-run
+undo=0                   # --undo
+force_undo=0             # --force-undo
+done_word="reset"        # reset | undone, for the problem report
 disclosures=0            # --disclosures
 releases_arg=""          # --releases V1,V2
 releases_given=0
@@ -15,6 +18,11 @@ typeset -A up_remote     # branch -> remote of its upstream
 typeset -A up_branch     # branch -> branch name on that remote
 typeset -A b_state       # branch -> uptodate | behind | ahead | diverged
 typeset -A b_count       # branch -> number of commits behind, or of local commits to discard
+typeset -A u_state       # branch -> restore | same | none (--undo)
+typeset -A u_old         # branch -> sha before the reset
+typeset -A u_new         # branch -> sha the reset left
+typeset -A u_cur         # branch -> sha now
+typeset -A u_count       # branch -> commits the restore brings back
 typeset -a problems
 
 invoke_dir=""
@@ -27,6 +35,7 @@ usage() {
 Usage: git-branches-reset-to-upstream [OPTIONS] BRANCH1 [BRANCH2 ...]
        git-branches-reset-to-upstream [OPTIONS] --disclosures GENERATION [GENERATION ...]
        git-branches-reset-to-upstream [OPTIONS] --releases VERSION[,VERSION ...]
+       git-branches-reset-to-upstream --undo [OPTIONS] (same arguments)
 
 Hard reset every given branch to its remote tracked (upstream) branch as of the
 last fetch (nothing is fetched: run git-branches-fetch first). A branch checked out in a worktree is reset in that worktree, any
@@ -38,7 +47,15 @@ together: every branch exists locally, has an upstream, and its worktree (if
 any) is clean (untracked files count). Nothing is pushed.
 
 OPTIONS:
-  --dry-run, -n        Validate and print what would happen. Nothing is reset.
+  --dry-run, -n        Validate and print what would happen. Nothing is reset
+                       (with --undo: nothing is undone).
+  --undo, -u           Move every branch back to where it was before its most recent
+                       reset by this command, found in the branch reflog. A branch
+                       that has moved since that reset (new commits, pull, another
+                       reset) is a problem and nothing is undone. A branch with no
+                       reset in its reflog is skipped. Takes the same arguments.
+  --force-undo         Like --undo, but also restore branches that have moved since
+                       the reset, discarding the commits made since.
   --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
                        Each is reset together with disclosure/frozen/<generation>
                        and disclosure/active/<generation>.
@@ -50,6 +67,8 @@ EXAMPLES:
   git-branches-reset-to-upstream 7.0.x main
   git-branches-reset-to-upstream --dry-run --disclosures 7.0.x 7.1.x main
   git-branches-reset-to-upstream -d 7.0.x main -r 7.0.1.1
+  git-branches-reset-to-upstream --undo --dry-run 7.0.x main   # what would restoring the last reset do
+  git-branches-reset-to-upstream --undo 7.0.x main
   git-branches-reset-to-upstream \$(svaob) --releases \$(ghmr)   # OSS branches, this month's OSS and next month's hotfix releases
 
 REQUIREMENTS:
@@ -73,7 +92,7 @@ problem() {
 fail_if_problems() {
 	[[ ${#problems[@]} -eq 0 ]] && return 0
 	local p first l
-	echo "Error: ${#problems[@]} problem(s) found. Nothing was reset:" >&2
+	echo "Error: ${#problems[@]} problem(s) found. Nothing was $done_word:" >&2
 	for p in "${problems[@]}"; do
 		first=1
 		for l in "${(@f)p}"; do
@@ -242,12 +261,76 @@ print_plan() {
 	echo ""
 }
 
+# Finds, per branch, the most recent reset to its upstream by this command in the
+# branch reflog (a worktree reset logs 'reset: moving to <ref>', a moved branch
+# 'branch: Reset to <ref>', where <ref> is the full upstream ref), and the sha the
+# branch had before it.
+plan_undo() {
+	local b want subj i found
+	local -a lines
+	for b in "${all_branches[@]}"; do
+		want="refs/remotes/$(upstream_display $b)"
+		lines=("${(@f)$(git reflog show --format='%H %gs' "refs/heads/$b")}")
+		found=0
+		for (( i = 1; i < ${#lines[@]}; i++ )); do
+			subj="${lines[i]#* }"
+			if [[ "$subj" == "reset: moving to $want" || "$subj" == "branch: Reset to $want" ]]; then
+				found=$i
+				break
+			fi
+		done
+		if (( found == 0 )); then
+			u_state[$b]=none
+			continue
+		fi
+		u_new[$b]="${lines[found]%% *}"
+		u_old[$b]="${lines[found+1]%% *}"
+		u_cur[$b]=$(git rev-parse "refs/heads/$b")
+		if [[ "${u_cur[$b]}" == "${u_old[$b]}" ]]; then
+			u_state[$b]=same
+			continue
+		fi
+		u_state[$b]=restore
+		u_count[$b]=$(git rev-list --count "${u_cur[$b]}..${u_old[$b]}")
+		if [[ "${u_cur[$b]}" != "${u_new[$b]}" && $force_undo -eq 0 ]]; then
+			problem "$b: has moved since the reset (now at ${u_cur[$b]:0:7}, the reset left it at ${u_new[$b]:0:7})${nl}use --force-undo to restore it anyway, which discards the commits made since"
+		fi
+	done
+}
+
+restored_commits() {
+	(( $1 == 1 )) && echo "$1 commit restored" || echo "$1 commits restored"
+}
+
+print_undo_plan() {
+	local b w=0 d where how
+	for b in "${all_branches[@]}"; do
+		(( ${#b} > w )) && w=${#b}
+	done
+	echo ""
+	if (( dry_run )); then echo "Would undo:"; else echo "Undo plan:"; fi
+	for b in "${all_branches[@]}"; do
+		case "${u_state[$b]}" in
+			none) printf "  %-${w}s  no reset found in the reflog, skipped\n" "$b" ;;
+			same) printf "  %-${w}s  already at %s, nothing to undo\n" "$b" "${u_old[$b]:0:7}" ;;
+			restore)
+				if d=$(worktree_for_branch "$b"); then where="in $d"; else where="(not checked out, moving branch)"; fi
+				printf "  %-${w}s  %s is at %s, was %s before the reset (%s)  %s\n" "$b" "$b" "${u_cur[$b]:0:7}" "${u_old[$b]:0:7}" \
+					"$(restored_commits ${u_count[$b]})" "$where"
+				;;
+		esac
+	done
+	echo ""
+}
+
 # ---------------------------------------------------------------------------
 # Parse arguments
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--dry-run|-n) dry_run=1; shift ;;
+		--undo|-u) undo=1; shift ;;
+		--force-undo) undo=1; force_undo=1; shift ;;
 		--disclosures|--disclosure|-d) disclosures=1; shift ;;
 		--releases|-r)
 			if [[ -z "$2" || "$2" == -* ]]; then
@@ -290,6 +373,7 @@ fi
 # ---------------------------------------------------------------------------
 # Main flow
 # ---------------------------------------------------------------------------
+(( undo )) && done_word="undone"
 build_worktree_map
 
 for b in "${args[@]}"; do
@@ -305,6 +389,38 @@ done
 
 validate_local
 fail_if_problems
+
+if (( undo )); then
+	plan_undo
+	fail_if_problems
+	print_undo_plan
+
+	typeset -a undo_todo
+	for b in "${all_branches[@]}"; do
+		[[ "${u_state[$b]}" == restore ]] && undo_todo+=("$b")
+	done
+	if [[ ${#undo_todo[@]} -eq 0 ]]; then
+		echo "Nothing to undo."
+		exit 0
+	fi
+	if (( dry_run )); then
+		echo "Dry run, nothing was undone."
+		exit 0
+	fi
+	for b in "${undo_todo[@]}"; do
+		if d=$(worktree_for_branch "$b"); then
+			echo "Restoring $b in $d"
+			git -C "$d" reset --hard --quiet "${u_old[$b]}" || { echo "Error: restore of $b failed" >&2; exit 1; }
+		else
+			echo "Restoring $b (not checked out, moving branch)"
+			git branch --force "$b" "${u_old[$b]}" > /dev/null || { echo "Error: restore of $b failed" >&2; exit 1; }
+		fi
+	done
+	echo ""
+	n_skipped=$(( ${#all_branches[@]} - ${#undo_todo[@]} ))
+	echo "Restored ${#undo_todo[@]} branch(es), $n_skipped skipped (no reset in the reflog, or already restored)."
+	exit 0
+fi
 
 validate_remote_refs
 fail_if_problems
@@ -347,7 +463,7 @@ done
 echo ""
 echo "Reset ${#todo[@]} branch(es), $(( ${#all_branches[@]} - ${#todo[@]} )) already up to date."
 if (( ${#discarded} )); then
-	echo "Discarded commits (recover with 'git branch <name> <sha>'):"
+	echo "Discarded commits (recover with 'git branch <name> <sha>', or run again with --undo):"
 	for b in "${todo[@]}"; do
 		(( ${+discarded[$b]} )) && printf "  %-${bw}s  %s\n" "$b" "${discarded[$b]}"
 	done

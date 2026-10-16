@@ -178,6 +178,92 @@ t "no upstream is rejected" '
 	run loose; expect_rc 1; expect_out "no upstream"
 '
 
+t "undo: restores a worktree branch and a moved branch" '
+	git -C $W checkout -q main
+	commit_on $W main m.txt
+	commit_on $W 7.0.x a.txt
+	local a=$(sha 7.0.x) m=$(sha main)
+	git -C $W checkout -q 7.0.x
+	run 7.0.x main; expect_rc 0
+	[[ $(sha 7.0.x) == $(sha oss/7.0.x) ]]
+	[[ $(sha main) == $(sha oss/main) ]]
+	run --undo 7.0.x main; expect_rc 0
+	expect_out "Restoring 7.0.x in"
+	expect_out "Restoring main \(not checked out"
+	expect_out "Restored 2 branch"
+	[[ $(sha 7.0.x) == $a ]]
+	[[ $(sha main) == $m ]]
+	has_file 7.0.x a.txt
+	[[ -z $(git -C $W status --porcelain) ]]
+'
+
+t "undo: dry run prints the plan and changes nothing" '
+	commit_on $W 7.0.x a.txt
+	local a=$(sha 7.0.x)
+	run 7.0.x; expect_rc 0
+	run --undo --dry-run 7.0.x; expect_rc 0
+	expect_out "Would undo"
+	expect_out "was ${a[1,7]} before the reset \(1 commit restored\)"
+	expect_out "Dry run, nothing was undone"
+	[[ $(sha 7.0.x) == $(sha oss/7.0.x) ]]
+	run -n -u 7.0.x; expect_rc 0; expect_out "Dry run, nothing was undone"
+	run --undo 7.0.x; expect_rc 0
+	[[ $(sha 7.0.x) == $a ]]
+'
+
+t "undo: a branch that moved since the reset is a problem unless forced" '
+	commit_on $W 7.0.x a.txt
+	local a=$(sha 7.0.x)
+	run 7.0.x; expect_rc 0
+	commit_on $W 7.0.x later.txt
+	local later=$(sha 7.0.x)
+	run --undo 7.0.x; expect_rc 1
+	expect_out "7.0.x: has moved since the reset"
+	expect_out "Nothing was undone"
+	[[ $(sha 7.0.x) == $later ]]
+	run --undo --dry-run 7.0.x; expect_rc 1
+	run --force-undo 7.0.x; expect_rc 0
+	[[ $(sha 7.0.x) == $a ]]
+	lacks_file 7.0.x later.txt
+'
+
+t "undo: no reset in the reflog is skipped, a second undo is a no-op" '
+	commit_on $W 7.0.x a.txt
+	local a=$(sha 7.0.x)
+	run 7.0.x; expect_rc 0
+	run --undo 7.0.x main; expect_rc 0
+	[[ $(sha 7.0.x) == $a ]]
+	run --undo 7.0.x; expect_rc 0
+	expect_out "already at ${a[1,7]}, nothing to undo"
+	expect_out "Nothing to undo"
+	run --undo main; expect_rc 0
+	expect_out "no reset found in the reflog, skipped"
+	expect_out "Nothing to undo"
+'
+
+t "undo: dirty worktree and missing branch are rejected together" '
+	commit_on $W 7.0.x a.txt
+	run 7.0.x; expect_rc 0
+	echo x > $W/untracked
+	run --undo 7.0.x nope; expect_rc 1
+	expect_out "working tree not clean"
+	expect_out "does not exist locally"
+	expect_out "Nothing was undone"
+'
+
+t "undo: --disclosures and --releases are expanded" '
+	commit_on $W 7.0.x a.txt
+	git -C $W checkout -q -b feat 7.0.x
+	git -C $W branch -q --track release/7.0.1 commercial/release/7.0.1
+	commit_on $W release/7.0.1 r.txt
+	local r=$(sha release/7.0.1)
+	git -C $W checkout -q 7.0.x
+	run -d 7.0.x -r 7.0.1; expect_rc 0
+	run -u -d 7.0.x -r 7.0.1; expect_rc 0
+	expect_out "release/7.0.1 .*was ${r[1,7]} before the reset"
+	[[ $(sha release/7.0.1) == $r ]]
+'
+
 echo ""
 echo "passed: $pass, failed: $fail"
 [[ $fail -eq 0 ]]

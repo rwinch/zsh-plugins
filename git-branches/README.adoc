@@ -52,7 +52,7 @@ gbbmf $(svaob)
 gbbr rebase $(ghmr)
 ----
 
-Two functions fill in `$(svaob) --releases $(ghmr)` for you and pass any extra options on: `gbbfa` for `gbbf` and `gbbcma` for `gbbcm`. `gbbdca` fills in just `$(svaob)` for `gbbdc`.
+Five functions fill in `$(svaob) --releases $(ghmr)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`. Three more fill in only what their command takes: `gbbmfa` for `gbbmf` (`$(svaob)`), `gbbra` for `gbbr` (`rebase $(ghmr)`) and `gbbdca` for `gbbdc` (`$(svaob)`).
 
 [#aliases]
 == Aliases
