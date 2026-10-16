@@ -2,7 +2,6 @@
 
 # Default values
 remote=""
-owner=""
 name_prefix=""
 skip_missing_remote=0
 dry_run=0
@@ -11,7 +10,7 @@ typeset -a patterns
 # Usage function
 usage() {
 	cat <<EOF
-Usage: git-worktrees-create [OPTIONS] PATTERN [PATTERN ...]
+Usage: git-worktrees-create --remote REMOTE [OPTIONS] PATTERN [PATTERN ...]
 
 Create git worktrees for the branches of a remote repository that match the given patterns.
 
@@ -19,7 +18,7 @@ PATTERN is a shell glob or a literal branch name. Quote globs so the shell does
 not expand them. '*' also matches '/'.
 
 OPTIONS:
-  --remote REMOTE         Specify the remote name (default: repository owner)
+  --remote REMOTE         The remote to create worktrees from (required)
   --name-prefix PREFIX    Prepend PREFIX to the local branch name and the worktree
                           directory, for a remote whose branch names clash with
                           local ones (commercial/docs-build -> commercial-docs-build)
@@ -36,16 +35,15 @@ BEHAVIOR:
     * Otherwise:
       - Creates a local tracking branch if it doesn't exist
       - Creates a worktree at ../{branch} tracking the local branch
-  - Default remote is the repository owner, auto-detected from ~/code directory structure
-    (~/code/OWNER/REPOSITORY/...)
 
 EXAMPLES:
-  git-worktrees-create 'release/*' main
+  git-worktrees-create --remote oss 'release/*' main
   git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'disclosure/*'
   git-worktrees-create --remote commercial --name-prefix commercial- docs-build
 
-The gwwca function runs these patterns for you: [0-9]*.[0-9]*.x, disclosure/*,
-release/*, main, docs-build, plus docs-build from the commercial remote.
+The gwwca function runs the usual patterns for you: [0-9]*.[0-9]*.x, disclosure/*
+and release/* from the commercial remote, then [0-9]*.[0-9]*.x, main and
+docs-build from the oss remote.
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -110,37 +108,16 @@ if (( ${#patterns} == 0 )); then
 	exit 1
 fi
 
-# Validate we're in a git repository
-if ! git rev-parse --git-dir > /dev/null 2>&1; then
-	echo "Error: Not in a git repository" >&2
+if [[ -z "$remote" ]]; then
+	echo "Error: --remote is required" >&2
+	echo "" >&2
+	usage
 	exit 1
 fi
 
-# Auto-detect owner from ~/code directory structure if remote not set
-if [[ -z "$remote" ]]; then
-	pwd=$(pwd)
-	code_dir="$HOME/code"
-
-	# Check if we're inside ~/code
-	if [[ "$pwd" == "$code_dir"/* ]]; then
-		# Remove the ~/code prefix
-		relative_path="${pwd#$code_dir/}"
-
-		# Extract owner (first directory after ~/code)
-		owner=$(echo "$relative_path" | cut -d'/' -f1)
-
-		if [[ -n "$owner" ]]; then
-			remote="$owner"
-		fi
-	fi
-fi
-
-# Validate that we have a remote
-if [[ -z "$remote" ]]; then
-	echo "Error: Could not determine remote" >&2
-	echo "Please provide --remote or run from within ~/code/OWNER/REPOSITORY/" >&2
-	echo "" >&2
-	usage
+# Validate we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
 	exit 1
 fi
 

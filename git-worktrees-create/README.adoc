@@ -9,11 +9,10 @@ This plugin provides a command to automatically create git worktrees for all mat
 == Features
 
 * Takes the branches to process as shell globs or literal branch names (e.g., `main`, `release/*`, `[0-9]*.[0-9]*.x`, `disclosure/*`)
-* `gwwca` runs the usual set of patterns, including `docs-build` from the `commercial` remote
+* `gwwca` runs the usual patterns against the `commercial` and `oss` remotes
 * Creates worktrees in the parent directory (`../branch-name`), also when run from a worktree of a slashed branch such as `release/1.0` or from a subdirectory
 * Automatically creates local tracking branches if they don't exist
 * Skips branches that are already checked out in a worktree, and existing worktrees, with informative messages
-* Auto-detects repository owner from `~/code` directory structure
 * Validates git repository and remote existence before processing
 * Ends with `Done, N failed` and exit status 1 if a branch or worktree could not be created, and warns when no branch matches the patterns
 
@@ -30,18 +29,23 @@ Or manually by adding the plugin directory to your `PATH`.
 
 == Usage
 
-The plugin also defines the alias `gwwc` for `git-worktrees-create`, and the function `gwwca`, which runs it with the usual patterns (`[0-9]*.[0-9]*.x`, `disclosure/*`, `release/*`, `main`, `docs-build`) and then creates a worktree for `docs-build` from the `commercial` remote (skipped if that remote does not exist). The only option `gwwca` accepts is `--dry-run`, which is passed to both runs.
+The plugin also defines the alias `gwwc` for `git-worktrees-create`, and the function `gwwca`, which runs it twice, commercial first:
+
+. `--remote commercial` with `[0-9]*.[0-9]*.x`, `disclosure/*` and `release/*` (skipped with a message if that remote does not exist)
+. `--remote oss` with `[0-9]*.[0-9]*.x`, `main` and `docs-build`
+
+Commercial runs first, so a `.x` branch that exists on both remotes comes from commercial and the oss run skips it, because its worktree exists. `gwwca` accepts `--oss-remote REMOTE` and `--commercial-remote REMOTE` to use other remote names, and `--dry-run`, which is passed to both runs.
 
 [source,bash]
 ----
-git-worktrees-create [OPTIONS] PATTERN [PATTERN ...]
+git-worktrees-create --remote REMOTE [OPTIONS] PATTERN [PATTERN ...]
 ----
 
 Quote globs so the shell does not expand them. `*` also matches `/`, so `disclosure/*` covers `disclosure/CVE-2025-1234/5.8.x`. At least one pattern is required.
 
 === Options
 
-* `--remote REMOTE` - Specify the remote name (default: repository owner auto-detected from directory structure)
+* `--remote REMOTE` - The remote to create worktrees from (required)
 * `--name-prefix PREFIX` - Prepend `PREFIX` to the local branch name and the worktree directory, for a remote whose branch names clash with local ones (`commercial/docs-build` becomes `commercial-docs-build`)
 * `--skip-missing-remote` - If the remote does not exist, say so and exit 0
 * `--dry-run` - Show what would be created without fetching or creating anything (uses the branches already fetched)
@@ -51,8 +55,8 @@ Quote globs so the shell does not expand them. `*` also matches `/`, so `disclos
 
 [source,bash]
 ----
-# Use owner as remote (auto-detected from ~/code/OWNER/REPOSITORY)
-git-worktrees-create 'release/*' main
+# Create worktrees for main and the release/* branches of the oss remote
+git-worktrees-create --remote oss 'release/*' main
 
 # Use 'upstream' as remote
 git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'disclosure/*'
@@ -66,7 +70,7 @@ git-worktrees-create --remote commercial --name-prefix commercial- docs-build
 The command performs the following steps:
 
 1. Validates you're in a git repository
-2. Determines the remote to use (defaults to repository owner from directory structure)
+2. Checks that the given remote exists
 3. Fetches the latest changes from the remote
 4. Iterates through all remote branches
 5. For each branch matching one of the patterns:
@@ -86,18 +90,18 @@ The command performs the following steps:
 
 [source,bash]
 ----
-$ gwwca
-Using remote: spring-projects
+$ git-worktrees-create --remote oss '[0-9]*.[0-9]*.x' main docs-build
+Using remote: oss
 
-Fetching from remote 'spring-projects'...
+Fetching from remote 'oss'...
 
 Processing branch: 5.8.x
-  → Creating local branch '5.8.x' tracking 'spring-projects/5.8.x'
+  → Creating local branch '5.8.x' tracking 'oss/5.8.x'
   → Creating worktree at ../5.8.x
   ✓ Successfully created worktree: ../5.8.x
 
 Processing branch: 6.0.x
-  → Creating local branch '6.0.x' tracking 'spring-projects/6.0.x'
+  → Creating local branch '6.0.x' tracking 'oss/6.0.x'
   → Creating worktree at ../6.0.x
   ✓ Successfully created worktree: ../6.0.x
 
