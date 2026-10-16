@@ -497,6 +497,7 @@ pause_for_validation() {
 merge_branch() {
 	local source="$1" target="$2" kind="$3"
 	local dir current rc
+	local msg_source="${source#disclosure/*/}" msg_target="${target#disclosure/*/}"
 	local -a cmd
 
 	while true; do
@@ -517,7 +518,10 @@ merge_branch() {
 		fi
 
 		if [[ $ours -eq 1 && "$kind" == across ]]; then
-			cmd=(git -C "$dir" merge -s ours --no-ff -m "merge(ours): $source into $target" "$source")
+			cmd=(git -C "$dir" merge -s ours --no-ff -m "merge(ours): $msg_source into $msg_target" "$source")
+		elif [[ "$msg_source" != "$source" || "$msg_target" != "$target" ]]; then
+			# disclosure branches read as their generation branches in history
+			cmd=(git -C "$dir" merge --no-edit -m "Merge branch '$msg_source' into '$msg_target'" "$source")
 		else
 			cmd=(git -C "$dir" merge --no-edit "$source")
 		fi

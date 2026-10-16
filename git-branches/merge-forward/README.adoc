@@ -112,6 +112,8 @@ When each branch carries its own version or dependency updates that must not mer
 Across hops run `git merge -s ours --no-ff -m "merge(ours): <source> into <target>"`: the merge is recorded but nothing is carried, so there are no conflicts.
 Down hops stay real merges, so every generation keeps its own updates in its disclosure branches.
 
+Merge messages that involve disclosure branches name the generation branches instead, so history never mentions `disclosure/<role>/`: `Merge branch '7.1.x' into '7.1.x'` for a down hop, `merge(ours): 7.0.x into 7.1.x` for an ours across hop.
+
 If `7.0.x`, `7.1.x` and `main` each carry their own unpushed dependency updates:
 
 [source,bash]

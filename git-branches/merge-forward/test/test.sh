@@ -236,7 +236,17 @@ t "ours + disclosures: ours across, real merges down" '
 	lacks_file disclosure/active/main deps.txt
 	contains disclosure/frozen/7.0.x disclosure/active/main
 	contains disclosure/active/7.0.x disclosure/active/main
-	[[ "$(git -C $W log -1 --format=%s disclosure/active/main)" == merge\(ours\):* ]]
+	[[ "$(git -C $W log -1 --format=%s disclosure/active/main)" == "merge(ours): 7.0.x into main" ]]
+'
+
+t "disclosures: merge messages name generation branches" '
+	commit_on $W 7.0.x fix.txt
+	commit_on $W disclosure/frozen/7.0.x own.txt
+	commit_on $W disclosure/active/7.0.x own2.txt
+	run --allow-ahead -o -d 7.0.x main; expect_rc 0
+	[[ "$(git -C $W log -1 --format=%s disclosure/frozen/7.0.x)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
+	[[ "$(git -C $W log -1 --format=%s disclosure/active/7.0.x)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
+	[[ "$(git -C $W log -1 --format=%s disclosure/frozen/main)" == "merge(ours): 7.0.x into main" ]]
 '
 
 # A conflict stops at the prompt; resolve it from "another terminal" and press Enter.
