@@ -21,13 +21,13 @@ A zsh plugin that fast-forwards several branches to their remote tracked branche
 antigen bundle rwinch/zsh-plugins git-branches/pull
 ----
 
-The plugin also defines the alias `gbbp` for `git-branches-pull`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
+The plugin also defines the alias `gbbpl` for `git-branches-pull`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
 To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line) and the `ghmr` function of link:../../gh-milestones[gh-milestones] (this month's OSS milestones and next month's commercial hotfixes as a comma separated list for `--releases`):
 
 [source,bash]
 ----
-gbbp $(svaob) --releases $(ghmr)
+gbbpl $(svaob) --releases $(ghmr)
 ----
 
 == Usage
