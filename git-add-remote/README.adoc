@@ -112,5 +112,5 @@ The script includes comprehensive error handling:
 
 * link:../git-url[git-url] - Generate GitHub repository URLs (required dependency)
 * link:../git-clone-convention[git-clone-convention] - Clone repositories following conventions
-* link:../git-create-worktrees[git-create-worktrees] - Create git worktrees for multiple branches
+* link:../git-worktrees-create[git-worktrees-create] - Create git worktrees for multiple branches
 

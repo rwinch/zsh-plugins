@@ -1,4 +1,4 @@
-= git-create-worktrees
+= git-worktrees-create
 
 A zsh plugin that automates the creation of git worktrees for version branches and special branches.
 
@@ -24,7 +24,7 @@ Can be installed using antigen:
 
 [source,bash]
 ----
-antigen bundle rwinch/zsh-plugins/git-create-worktrees
+antigen bundle rwinch/zsh-plugins/git-worktrees-create
 ----
 
 Or manually by adding the plugin directory to your `PATH`.
@@ -33,7 +33,7 @@ Or manually by adding the plugin directory to your `PATH`.
 
 [source,bash]
 ----
-git-create-worktrees [OPTIONS]
+git-worktrees-create [OPTIONS]
 ----
 
 === Options
@@ -46,13 +46,13 @@ git-create-worktrees [OPTIONS]
 [source,bash]
 ----
 # Use owner as remote (auto-detected from ~/code/OWNER/REPOSITORY)
-git-create-worktrees
+git-worktrees-create
 
 # Use 'upstream' as remote
-git-create-worktrees --remote upstream
+git-worktrees-create --remote upstream
 
 # Use 'origin' as remote
-git-create-worktrees --remote origin
+git-worktrees-create --remote origin
 ----
 
 == Behavior
@@ -80,7 +80,7 @@ The command performs the following steps:
 
 [source,bash]
 ----
-$ git-create-worktrees
+$ git-worktrees-create
 Using remote: spring-projects
 
 Fetching from remote 'spring-projects'...

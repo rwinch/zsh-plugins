@@ -16,7 +16,7 @@ Like 'git switch', but cd's into the worktree for the branch.
     worktree at ../<new-branch>, then cd into it
   - With -C, same as -c but resets <new-branch> if it already exists
 
-Worktrees are siblings of the current worktree (same layout as git-create-worktrees).
+Worktrees are siblings of the current worktree (same layout as git-worktrees-create).
 USAGE
 }
 

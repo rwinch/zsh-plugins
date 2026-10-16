@@ -4,7 +4,7 @@ Adds `git-worktree-switch` (alias `gws`), which behaves like `git switch` but `c
 * If the branch exists locally or on a single remote, create a worktree at `../<branch>` and `cd` into it.
 * With `-c <new-branch> [start-point]` (or `-C` to reset), create the branch and a worktree for it.
 
-Worktrees are siblings of the current worktree, matching the layout of `git-create-worktrees`.
+Worktrees are siblings of the current worktree, matching the layout of `git-worktrees-create`.
 
 This is a shell function rather than a script on `PATH` because a child process cannot change the directory of your shell.
 

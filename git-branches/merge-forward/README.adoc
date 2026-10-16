@@ -190,6 +190,6 @@ DEBUG=1 git-branches/merge-forward/test/test.sh    # also print the output of ev
 * link:../fetch[git-branches-fetch] - Fetch and report how each branch compares to its upstream, run it before merging
 * link:../pull[git-branches-pull] - Fast-forward the branches that are behind, run it before merging
 * link:../release[git-branches-release] - Rebuild `release/<version>` branches once the merge is pushed
-* link:../../git-create-worktrees[git-create-worktrees] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
+* link:../../git-worktrees-create[git-worktrees-create] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
 * link:../../gmo[gmo] - Records a single merge with `git merge -s ours` and an editable message
 * link:../../../spring-merge-tutorial[spring-merge-tutorial] - Describes the disclosure branch merges the `--disclosures` plan follows
