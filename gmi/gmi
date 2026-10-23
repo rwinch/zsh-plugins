@@ -8,8 +8,8 @@ usage() {
 Usage: gmi [--dry-run] COMMIT BRANCH
 
 Show how COMMIT got into BRANCH: the original commit, the merge commit that
-brought it in, and the diff that merge produced (or a note that the merge was
-done with 'ours').
+brought it in, the diff that merge produced (or a note that the merge was
+done with 'ours'), and every branch (local and remote) that contains COMMIT.
 
 ARGUMENTS:
   COMMIT   Commit ref (sha, tag, branch, ...) (required)
@@ -21,6 +21,7 @@ OPTIONS:
   --help, -h      Display this help message
 
 BEHAVIOR:
+  - Lists the branches containing COMMIT with 'git branch --all --contains'.
   - Each git command is echoed to stderr as '\$ ...' before it runs.
   - The merge is the oldest commit on BRANCH's first-parent history that
     contains COMMIT. If it is a merge, its diff against its first parent is
@@ -70,6 +71,7 @@ git rev-parse --verify ${(q-)args[2]}^{commit}
 git merge-base --is-ancestor <commit> <branch>
 git rev-list --first-parent --ancestry-path --reverse <commit>..<branch>   # first line is the merge
 git log -1 --stat <commit>
+git branch --all --contains <commit>
 git log -1 <merge>
 git diff-tree --no-commit-id --name-only -r <commit>   # files the commit touched
 git diff --quiet <merge>^1 <merge> -- <files>          # empty means ours
@@ -123,6 +125,9 @@ merge=$(run git rev-list --first-parent --ancestry-path --reverse "$commit..$bra
 
 heading "Commit"
 git_run log -1 --stat "$commit"
+
+heading "Branches containing the commit"
+git_run branch --all --contains "$commit"
 
 heading "Merged into $branch_name by"
 if [[ -z "$merge" ]] || (( $(git rev-list --parents -n 1 "$merge" | wc -w) < 3 )); then

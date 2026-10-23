@@ -1,10 +1,11 @@
 = gmi
 
-A zsh plugin that shows how a commit got into a branch: the original commit, the merge commit that brought it in, and the diff that merge produced (or a note that the merge used `ours`).
+A zsh plugin that shows how a commit got into a branch: the original commit, every branch that contains it, the merge commit that brought it in, and the diff that merge produced (or a note that the merge used `ours`).
 
 == Features
 
 * Shows the original commit (`git log -1 --stat`)
+* Lists every local and remote branch that contains the commit (`git branch --all --contains`)
 * Finds the merge on the branch's first-parent history that first contained the commit, and shows it
 * Shows the merge's diff against its first parent, limited to the files the commit touched. If that diff is empty it says the merge was done with `ours`
 * Echoes every git command to stderr as `$ ...` before running it
