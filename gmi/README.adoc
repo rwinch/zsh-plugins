@@ -7,7 +7,7 @@ A zsh plugin that shows how a commit got into a branch: the original commit, eve
 * Shows the original commit (`git log -1 --stat`)
 * Lists every local and remote branch that contains the commit (`git branch --all --contains`)
 * Finds the merge on the branch's first-parent history that first contained the commit, and shows it
-* Shows the merge's diff against its first parent, limited to the files the commit touched. If that diff is empty it says the merge was done with `ours`
+* Shows a `--stat` summary of the merge's diff against its first parent (the full patch with `--full`), limited to the files the commit touched. If that diff is empty it says the merge was done with `ours`
 * Echoes every git command to stderr as `$ ...` before running it
 * `--dry-run` prints the commands without running them and without a `$` prefix, so they can be copied
 
@@ -32,6 +32,7 @@ gmi [--dry-run] COMMIT BRANCH
 === Options
 
 * `--dry-run`, `-n`: print the git commands that would be used, without running them
+* `--full`, `-f`: show the full diff of the merge instead of the `--stat` summary
 * `--help`, `-h`: display usage
 
 === Examples
@@ -40,6 +41,7 @@ gmi [--dry-run] COMMIT BRANCH
 ----
 gmi 3f2a9c1 7.1.x
 gmi --dry-run 3f2a9c1 origin/7.1.x
+gmi --full 3f2a9c1 7.1.x
 ----
 
 === Results

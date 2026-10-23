@@ -5,7 +5,7 @@
 
 usage() {
 	cat <<EOT
-Usage: gmi [--dry-run] COMMIT BRANCH
+Usage: gmi [--dry-run] [--full] COMMIT BRANCH
 
 Show how COMMIT got into BRANCH: the original commit, the merge commit that
 brought it in, the diff that merge produced (or a note that the merge was
@@ -18,6 +18,7 @@ ARGUMENTS:
 OPTIONS:
   --dry-run, -n   Print the git commands that would be used, without running
                   them and without a '\$' prefix so they can be copied
+  --full, -f      Show the full diff of the merge instead of the --stat summary
   --help, -h      Display this help message
 
 BEHAVIOR:
@@ -26,7 +27,8 @@ BEHAVIOR:
   - Each git command is echoed to stderr as '\$ ...' before it runs.
   - The merge is the oldest commit on BRANCH's first-parent history that
     contains COMMIT. If it is a merge, its diff against its first parent is
-    shown, limited to the files COMMIT touched. An empty diff means the merge
+    shown as a --stat summary (or the full patch with --full), limited to
+    the files COMMIT touched. An empty diff means the merge
     was done with 'ours'.
   - Exit status: 0 if COMMIT is in BRANCH, 1 if it is not, 2 for usage errors.
 
@@ -41,11 +43,13 @@ EOT
 }
 
 dry_run=false
+full=false
 args=()
 for arg in "$@"; do
 	case "$arg" in
 		--help|-h) usage; exit 0 ;;
 		--dry-run|-n) dry_run=true ;;
+		--full|-f) full=true ;;
 		-*) echo "Error: Unknown option: $arg" >&2; echo "" >&2; usage >&2; exit 2 ;;
 		*) args+=("$arg") ;;
 	esac
@@ -76,7 +80,7 @@ git --no-pager branch --all --contains <commit>
 git --no-pager log -1 <merge>
 git diff-tree --no-commit-id --name-only -r <commit>   # files the commit touched
 git diff --quiet <merge>^1 <merge> -- <files>          # empty means ours
-git --no-pager diff <merge>^1 <merge> -- <files>
+git --no-pager diff $($full || echo '--stat ')<merge>^1 <merge> -- <files>
 EOT
 	exit 0
 fi
@@ -154,5 +158,7 @@ if run git diff --quiet "$merge^1" "$merge" "${pathspec[@]}"; then
 		echo "Merged ours: the merge produced no changes."
 	fi
 else
-	git_run diff "$merge^1" "$merge" "${pathspec[@]}"
+	stat=(--stat)
+	$full && stat=()
+	git_run diff "${stat[@]}" "$merge^1" "$merge" "${pathspec[@]}"
 fi
