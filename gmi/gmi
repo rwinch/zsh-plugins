@@ -1,0 +1,152 @@
+#!/bin/zsh
+
+# Named 'gmi' ("git merge info") to sit next to 'gmo' ("git merge ours") and
+# invoked as a bare command rather than a 'git <subcommand>'.
+
+usage() {
+	cat <<EOT
+Usage: gmi [--dry-run] COMMIT BRANCH
+
+Show how COMMIT got into BRANCH: the original commit, the merge commit that
+brought it in, and the diff that merge produced (or a note that the merge was
+done with 'ours').
+
+ARGUMENTS:
+  COMMIT   Commit ref (sha, tag, branch, ...) (required)
+  BRANCH   Branch ref to look for the merge in, e.g. 7.1.x or origin/7.1.x (required)
+
+OPTIONS:
+  --dry-run, -n   Print the git commands that would be used, without running
+                  them and without a '\$' prefix so they can be copied
+  --help, -h      Display this help message
+
+BEHAVIOR:
+  - Each git command is echoed to stderr as '\$ ...' before it runs.
+  - The merge is the oldest commit on BRANCH's first-parent history that
+    contains COMMIT. If it is a merge, its diff against its first parent is
+    shown, limited to the files COMMIT touched. An empty diff means the merge
+    was done with 'ours'.
+  - Exit status: 0 if COMMIT is in BRANCH, 1 if it is not, 2 for usage errors.
+
+EXAMPLES:
+  gmi 3f2a9c1 7.1.x
+  gmi --dry-run 3f2a9c1 origin/7.1.x
+
+REQUIREMENTS:
+  - Must be run from within a git repository
+
+EOT
+}
+
+dry_run=false
+args=()
+for arg in "$@"; do
+	case "$arg" in
+		--help|-h) usage; exit 0 ;;
+		--dry-run|-n) dry_run=true ;;
+		-*) echo "Error: Unknown option: $arg" >&2; echo "" >&2; usage >&2; exit 2 ;;
+		*) args+=("$arg") ;;
+	esac
+done
+
+if (( $#args < 2 )); then
+	echo "Error: COMMIT and BRANCH are required" >&2
+	echo "" >&2
+	usage >&2
+	exit 2
+fi
+
+if (( $#args > 2 )); then
+	echo "Error: Too many arguments" >&2
+	echo "" >&2
+	usage >&2
+	exit 2
+fi
+
+if $dry_run; then
+	cat <<EOT
+git rev-parse --verify ${(q-)args[1]}^{commit}
+git rev-parse --verify ${(q-)args[2]}^{commit}
+git merge-base --is-ancestor <commit> <branch>
+git rev-list --first-parent --ancestry-path --reverse <commit>..<branch>   # first line is the merge
+git log -1 --stat <commit>
+git log -1 <merge>
+git diff-tree --no-commit-id --name-only -r <commit>   # files the commit touched
+git diff --quiet <merge>^1 <merge> -- <files>          # empty means ours
+git diff <merge>^1 <merge> -- <files>
+EOT
+	exit 0
+fi
+
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
+	exit 2
+fi
+
+color=()
+dim='' reset=''
+if [[ -t 1 ]]; then
+	color=(-c color.ui=always)
+fi
+if [[ -t 2 ]]; then
+	dim=$'\e[2m' reset=$'\e[0m'
+fi
+
+# Echo the command to stderr, then run it
+run() {
+	print -r -u2 -- "${dim}\$ ${(j: :)${(@q-)argv}}${reset}"
+	command "$@"
+}
+
+# Same as run, but with git's color and quoting settings for the report
+git_run() {
+	run git "${color[@]}" -c core.quotePath=false "$@"
+}
+
+heading() {
+	print -r -- ""
+	print -r -- "== $1 =="
+}
+
+commit=$(run git rev-parse --verify "${args[1]}^{commit}") || { echo "Error: Not a commit: ${args[1]}" >&2; exit 2; }
+branch=$(run git rev-parse --verify "${args[2]}^{commit}") || { echo "Error: Not a commit: ${args[2]}" >&2; exit 2; }
+short=$(git rev-parse --short "$commit")
+branch_name=${args[2]}
+
+if ! run git merge-base --is-ancestor "$commit" "$branch"; then
+	heading "Merged into $branch_name by"
+	echo "Not merged: $short is not an ancestor of $branch_name."
+	exit 1
+fi
+
+merge=$(run git rev-list --first-parent --ancestry-path --reverse "$commit..$branch" | head -1)
+
+heading "Commit"
+git_run log -1 --stat "$commit"
+
+heading "Merged into $branch_name by"
+if [[ -z "$merge" ]] || (( $(git rev-list --parents -n 1 "$merge" | wc -w) < 3 )); then
+	echo "No merge: $short is part of $branch_name's own history."
+	exit 0
+fi
+git_run log -1 "$merge"
+
+files=("${(@f)$(run git -c core.quotePath=false diff-tree --no-commit-id --name-only -r "$commit")}")
+files=("${(@)files:#}")
+if (( $#files )); then
+	heading "Merge diff (files changed by the commit)"
+	pathspec=(-- "${files[@]}")
+else
+	heading "Merge diff"
+	pathspec=()
+fi
+
+if run git diff --quiet "$merge^1" "$merge" "${pathspec[@]}"; then
+	if (( $#files )) && ! run git diff --quiet "$merge^1" "$merge"; then
+		echo "Merged ours: the merge changed none of the files touched by $short."
+	else
+		echo "Merged ours: the merge produced no changes."
+	fi
+else
+	git_run diff "$merge^1" "$merge" "${pathspec[@]}"
+fi

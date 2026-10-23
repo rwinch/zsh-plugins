@@ -32,6 +32,7 @@ antigen bundle rwinch/zsh-plugins gh-milestones
 antigen bundle rwinch/zsh-plugins gh-update
 antigen bundle rwinch/zsh-plugins get-security-module-names
 antigen bundle rwinch/zsh-plugins git-recent
+antigen bundle rwinch/zsh-plugins gmi
 antigen bundle rwinch/zsh-plugins gw
 
 # Load the theme (use rdubbs to show git repo path in the prompt)

@@ -1,0 +1,55 @@
+= gmi
+
+A zsh plugin that shows how a commit got into a branch: the original commit, the merge commit that brought it in, and the diff that merge produced (or a note that the merge used `ours`).
+
+== Features
+
+* Shows the original commit (`git log -1 --stat`)
+* Finds the merge on the branch's first-parent history that first contained the commit, and shows it
+* Shows the merge's diff against its first parent, limited to the files the commit touched. If that diff is empty it says the merge was done with `ours`
+* Echoes every git command to stderr as `$ ...` before running it
+* `--dry-run` prints the commands without running them and without a `$` prefix, so they can be copied
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins gmi
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+gmi [--dry-run] COMMIT BRANCH
+----
+
+=== Options
+
+* `--dry-run`, `-n`: print the git commands that would be used, without running them
+* `--help`, `-h`: display usage
+
+=== Examples
+
+[source,bash]
+----
+gmi 3f2a9c1 7.1.x
+gmi --dry-run 3f2a9c1 origin/7.1.x
+----
+
+=== Results
+
+* Merged normally: the merge commit log and the diff the merge applied for the commit's files
+* `Merged ours: ...`: the merge changed none of the commit's files (or nothing at all)
+* `No merge: ...`: the commit is part of the branch's own history, with no merge
+* `Not merged: ...`: the commit is not an ancestor of the branch
+
+=== Exit status
+
+* 0: the commit is in the branch
+* 1: the commit is not in the branch
+* 2: usage error or not a git repository
