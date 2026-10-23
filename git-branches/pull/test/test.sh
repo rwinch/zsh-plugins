@@ -104,11 +104,11 @@ advance() {
 	git -C $W fetch -q $1
 }
 
-t "args: none, unknown option, duplicates, bad release" '
+t "args: none, unknown option, duplicates, --releases removed" '
 	run; expect_rc 1
 	run -x a; expect_rc 1; expect_out "Unknown option"
 	run a a; expect_rc 1; expect_out "more than once"
-	run -r 7.0; expect_rc 1; expect_out "Invalid release version"
+	run --releases 7.0.1 7.0.x; expect_rc 1; expect_out "Unknown option"
 '
 
 t "up to date: nothing to pull" '
@@ -164,16 +164,12 @@ t "diverged branch is a problem and nothing is pulled" '
 	[[ $(sha 7.0.x) == $before ]]
 '
 
-t "disclosures and releases are expanded" '
+t "disclosures are expanded" '
 	advance commercial disclosure/frozen/7.0.x
-	git -C $W branch -q --track release/7.0.1 commercial/release/7.0.1
-	advance commercial release/7.0.1
 	git -C $S checkout -q main
-	run -d 7.0.x -r 7.0.1; expect_rc 0
+	run -d 7.0.x; expect_rc 0
 	expect_out "disclosure/active/7.0.x"
-	expect_out "release/7.0.1"
 	[[ $(sha disclosure/frozen/7.0.x) == $(sha commercial/disclosure/frozen/7.0.x) ]]
-	[[ $(sha release/7.0.1) == $(sha commercial/release/7.0.1) ]]
 '
 
 t "--disclosure alias works" '

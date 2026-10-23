@@ -1,12 +1,11 @@
 = git-branches-check-merged
 
-A zsh plugin that checks that a chain of branches is merged forward, on the local branches, on their remote tracking equivalents, or both. It takes the same chain, `--disclosures` and `--releases` arguments as link:../merge-forward[git-branches-merge-forward], link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
+A zsh plugin that checks that a chain of branches is merged forward, on the local branches, on their remote tracking equivalents, or both. It takes the same chain and `--disclosures` arguments as link:../merge-forward[git-branches-merge-forward], link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
 
 == Features
 
 * `git branches-check-merged 7.0.x 7.1.x main` checks that `7.0.x` is contained in `7.1.x`, and `7.1.x` in `main`
 * `--disclosures` checks the same hops as `git-branches-merge-forward --disclosures`
-* `--releases` checks that `release/<version>` contains its base disclosure branch
 * `--local` (the default) checks the local branches, `--remote` checks their upstream refs, and both can be combined
 * Read-only: nothing is fetched and nothing is changed, and worktrees may be dirty. Run `git fetch` first to check what is on the remote now.
 * Exits 0 when everything is merged and 1 otherwise, and lists the commits that are not merged
@@ -21,11 +20,11 @@ antigen bundle rwinch/zsh-plugins git-branches/check-merged
 
 The plugin also defines the alias `gbbcm` for `git-branches-check-merged`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
-To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line) and the `ghmr` function of link:../../gh-milestones[gh-milestones] (this month's OSS milestones and next month's commercial hotfixes as a comma separated list for `--releases`):
+To fill in the branches, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line):
 
 [source,bash]
 ----
-gbbcm $(svaob) --releases $(ghmr)
+gbbcm $(svaob)
 ----
 
 The alias function `gbbcma` runs exactly that, and passes any extra options on, for example `gbbcma --disclosures`.
@@ -36,7 +35,6 @@ The alias function `gbbcma` runs exactly that, and passes any extra options on, 
 ----
 git branches-check-merged [OPTIONS] BRANCH1 BRANCH2 [BRANCH3 ...]
 git branches-check-merged [OPTIONS] --disclosures GENERATION [GENERATION ...]
-git branches-check-merged [OPTIONS] --releases VERSION[,VERSION ...]
 ----
 
 |===
@@ -51,9 +49,6 @@ git branches-check-merged [OPTIONS] --releases VERSION[,VERSION ...]
 |`--disclosures`, `-d`
 |Arguments are OSS generations. Checks the hops `git-branches-merge-forward --disclosures` would merge. `--disclosure` is accepted too.
 
-|`--releases`, `-r LIST`
-|Comma separated release versions, for example `7.0.1,7.0.1.1,7.1.0-RC1`. A hotfix version is based on `disclosure/active/<major>.<minor>.x`, anything else on `disclosure/frozen/<major>.<minor>.x`.
-
 |`--help`, `-h`
 |Show help.
 |===
@@ -62,15 +57,13 @@ git branches-check-merged [OPTIONS] --releases VERSION[,VERSION ...]
 
 [source,text]
 ----
-$ git branches-check-merged --disclosures 7.0.x main --releases 7.0.1
+$ git branches-check-merged --disclosures 7.0.x main
 Checking local branches:
   (1) 7.0.x                   -> main                      merged
   (3) main                    -> disclosure/frozen/main    NOT MERGED, 2 commit(s)
         git log --oneline disclosure/frozen/main..main
         a1b2c3d Fix thing
         e4f5a6b Other fix
-Releases:
-  release/7.0.1 contains disclosure/frozen/7.0.x  merged
 
 Error: 1 of 7 check(s) not merged (local).
 ----
@@ -83,7 +76,7 @@ With `--remote` the names are the upstream refs (`oss/7.0.x -> oss/main`). A bra
 ----
 git branches-check-merged 7.0.x 7.1.x main
 git branches-check-merged --remote --disclosures 7.0.x main
-git branches-check-merged -l -R -d 7.0.x main -r 7.0.1.1
+git branches-check-merged -l -R -d 7.0.x main
 ----
 
 == Tests

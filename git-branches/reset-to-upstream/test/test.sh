@@ -96,11 +96,12 @@ t() {
 # ---------------------------------------------------------------------------
 sha() { git -C $W rev-parse "$1" }
 
-t "args: none, unknown option, duplicates, bad release" '
+t "args: none, unknown option, duplicates, --releases is gone" '
 	run; expect_rc 1
 	run -x a; expect_rc 1; expect_out "Unknown option"
 	run a a; expect_rc 1; expect_out "more than once"
-	run -r 7.0; expect_rc 1; expect_out "Invalid release version"
+	run --releases 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run -r 7.0.1; expect_rc 1; expect_out "Unknown option"
 '
 
 t "up to date: nothing to reset" '
@@ -148,16 +149,12 @@ t "diverged branch is reset" '
 	[[ $(sha main) == $(sha oss/main) ]]
 '
 
-t "disclosures and releases are expanded" '
+t "disclosures are expanded" '
 	commit_on $W disclosure/frozen/7.0.x a.txt
-	git -C $W branch -q --track release/7.0.1 commercial/release/7.0.1
-	commit_on $W release/7.0.1 b.txt
 	git -C $W checkout -q 7.0.x
-	run -d 7.0.x -r 7.0.1; expect_rc 0
+	run -d 7.0.x; expect_rc 0
 	expect_out "disclosure/active/7.0.x"
-	expect_out "release/7.0.1"
 	[[ $(sha disclosure/frozen/7.0.x) == $(sha commercial/disclosure/frozen/7.0.x) ]]
-	[[ $(sha release/7.0.1) == $(sha commercial/release/7.0.1) ]]
 '
 
 t "--disclosure alias works" '
@@ -251,17 +248,16 @@ t "undo: dirty worktree and missing branch are rejected together" '
 	expect_out "Nothing was undone"
 '
 
-t "undo: --disclosures and --releases are expanded" '
+t "undo: --disclosures is expanded" '
 	commit_on $W 7.0.x a.txt
 	git -C $W checkout -q -b feat 7.0.x
-	git -C $W branch -q --track release/7.0.1 commercial/release/7.0.1
-	commit_on $W release/7.0.1 r.txt
-	local r=$(sha release/7.0.1)
+	commit_on $W disclosure/frozen/7.0.x r.txt
+	local r=$(sha disclosure/frozen/7.0.x)
 	git -C $W checkout -q 7.0.x
-	run -d 7.0.x -r 7.0.1; expect_rc 0
-	run -u -d 7.0.x -r 7.0.1; expect_rc 0
-	expect_out "release/7.0.1 .*was ${r[1,7]} before the reset"
-	[[ $(sha release/7.0.1) == $r ]]
+	run -d 7.0.x; expect_rc 0
+	run -u -d 7.0.x; expect_rc 0
+	expect_out "disclosure/frozen/7.0.x .*was ${r[1,7]} before the reset"
+	[[ $(sha disclosure/frozen/7.0.x) == $r ]]
 '
 
 echo ""

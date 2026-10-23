@@ -14,7 +14,7 @@ They share the command prefix `git-branches-`, so `git branches-<TAB>` lists the
 |link:merge-forward[git-branches-merge-forward] |`gbbmf` |Merge a chain of branches forward
 |link:disclosure-create[git-branches-disclosure-create] |`gbbdc` |Create `disclosure/frozen` and `disclosure/active` branches from OSS branches, with the commercial remote as upstream
 |link:release[git-branches-release] |`gbbr` |Rebuild `release/<version>` branches on their disclosure base
-|link:push[git-branches-push] |`gbbph` |Push the branches that are ahead of their upstream, forcing rebuilt releases with a lease
+|link:push[git-branches-push] |`gbbph` |Push the branches that are ahead of their upstream
 |===
 
 A typical run goes fetch, pull (or reset-to-upstream), check-merged, merge-forward, push, then release.
@@ -40,19 +40,15 @@ Loading the group and a subfolder together is harmless, it only repeats a `PATH`
 
 == Filling in the arguments
 
-Two aliases from other plugins print the arguments on one line:
-
-* `svaob` (link:../spring-versions[spring-versions]) prints the OSS branches, for example `7.0.x 7.1.x main`
-* `ghmr` (link:../gh-milestones[gh-milestones]) prints this month's OSS milestones and next month's commercial hotfixes separated by commas, for `--releases` and for `git-branches-release`
+The `svaob` alias (link:../spring-versions[spring-versions]) prints the OSS branches on one line, for example `7.0.x 7.1.x main`:
 
 [source,bash]
 ----
-gbbf $(svaob) --releases $(ghmr)
+gbbf $(svaob)
 gbbmf $(svaob)
-gbbr rebase $(ghmr)
 ----
 
-Five functions fill in `$(svaob) --releases $(ghmr)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`. Three more fill in only what their command takes: `gbbmfa` for `gbbmf` (`$(svaob)`), `gbbra` for `gbbr` (`rebase $(ghmr)`) and `gbbdca` for `gbbdc` (`$(svaob)`).
+Functions fill in `$(svaob)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`, `gbbmfa` for `gbbmf` and `gbbdca` for `gbbdc` do the same.
 
 [#aliases]
 == Aliases

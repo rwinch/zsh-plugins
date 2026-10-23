@@ -1,12 +1,11 @@
 = git-branches-fetch
 
-A zsh plugin that fetches the remotes behind several branches and reports how each branch compares to its upstream, with `--disclosures` and `--releases` support like link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
+A zsh plugin that fetches the remotes behind several branches and reports how each branch compares to its upstream, with `--disclosures` support like link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
 
 == Features
 
 * `git branches-fetch 7.0.x main` fetches each branch's upstream remote (once per remote, with `--prune`), then prints whether each branch is up to date, behind, ahead, diverged or gone
 * `--disclosures` also reports `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
-* `--releases` also reports `release/<version>`
 * Never changes a local branch, worktree or file, so dirty worktrees are fine
 * A diverged branch or an upstream that is gone is reported, not an error
 * Branches are validated first (exists locally, has an upstream) and all problems are reported together before anything is fetched
@@ -21,11 +20,11 @@ antigen bundle rwinch/zsh-plugins git-branches/fetch
 
 The plugin also defines the alias `gbbf` for `git-branches-fetch`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
-To fill in the branches and releases, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line) and the `ghmr` function of link:../../gh-milestones[gh-milestones] (this month's OSS milestones and next month's commercial hotfixes as a comma separated list for `--releases`):
+To fill in the branches, use the `svaob` alias of link:../../spring-versions[spring-versions] (the OSS branches on one line):
 
 [source,bash]
 ----
-gbbf $(svaob) --releases $(ghmr)
+gbbf $(svaob)
 ----
 
 The alias function `gbbfa` runs exactly that, and passes any extra options on, for example `gbbfa --disclosures`.
@@ -36,7 +35,6 @@ The alias function `gbbfa` runs exactly that, and passes any extra options on, f
 ----
 git branches-fetch [OPTIONS] BRANCH [BRANCH ...]
 git branches-fetch [OPTIONS] --disclosures GENERATION [GENERATION ...]
-git branches-fetch [OPTIONS] --releases VERSION[,VERSION ...]
 ----
 
 |===
@@ -44,9 +42,6 @@ git branches-fetch [OPTIONS] --releases VERSION[,VERSION ...]
 
 |`--disclosures`, `-d`
 |Arguments are OSS generations. Each is reported with its disclosure frozen and active branches. `--disclosure` is accepted too.
-
-|`--releases`, `-r LIST`
-|Comma separated release versions, for example `7.0.1,7.0.1.1,7.1.0-RC1`.
 
 |`--help`, `-h`
 |Show help.

@@ -3,21 +3,17 @@
 # ---- options ----
 dry_run=0                # --dry-run
 disclosures=0            # --disclosures
-releases_arg=""          # --releases V1,V2
 typeset -a branches      # positional args, in order
 
-# ---- the branches taking part (releases are appended as release/<version>) ----
+# ---- the branches taking part ----
 typeset -a all_branches
-typeset -A is_release    # branch -> 1 when it is a release/<version> branch
 typeset -A up_remote     # branch -> remote of its upstream
 typeset -A up_branch     # branch -> branch name on that remote
 typeset -a problems
 
 # ---- the push plan: parallel arrays, one entry per branch to push ----
 typeset -a push_name
-typeset -a push_kind     # ahead | force
 typeset -a push_count    # commits ahead of the upstream
-typeset -a push_lease    # sha of the remote branch (force only)
 typeset -a push_remote
 
 ab_behind=0
@@ -28,16 +24,13 @@ usage() {
 	cat <<EOF
 Usage: git-branches-push [OPTIONS] BRANCH [BRANCH ...]
        git-branches-push [OPTIONS] --disclosures GENERATION [GENERATION ...]
-       git-branches-push [OPTIONS] --releases VERSION[,VERSION ...]
 
 Pushes the branches that are ahead of their upstream, one 'git push --atomic' per
-remote. A release/<version> branch that has diverged from its upstream (it was
-rebuilt, for example by git-branches-release) is forced with a lease on the sha it
-had at the last fetch.
+remote.
 
 Everything is validated before anything is pushed, and all problems are reported
 together: every branch exists locally, has an upstream that still exists, and is not
-behind it. A branch (not a release) that has diverged is a problem too. Nothing is
+behind it. A branch that has diverged is a problem too. Nothing is
 fetched or pulled: run git-branches-fetch and git-branches-pull first.
 
 OPTIONS:
@@ -45,14 +38,12 @@ OPTIONS:
   --disclosures, -d    The arguments are OSS generation branches. Each is pushed with
                        its disclosure/frozen/<generation> and
                        disclosure/active/<generation> branches.
-  --releases, -r LIST  Comma separated release versions, for example
-                       7.0.1,7.0.1.1,7.1.0-RC1 (release/<version> branches)
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-push 7.0.x main
   git-branches-push --dry-run --disclosures 7.0.x 7.1.x main
-  git-branches-push \$(svaob) --releases \$(ghmr)
+  git-branches-push \$(svaob)
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -118,29 +109,6 @@ add_branch() {
 	(( ${all_branches[(Ie)$1]} )) || all_branches+=("$1")
 }
 
-# Parses and checks the versions (no git needed), adding release/<version> branches.
-parse_releases() {
-	local -a items
-	local v
-	local -A seen_version
-	items=("${(@s:,:)releases_arg}")
-
-	for v in "${items[@]}"; do
-		if [[ ! "$v" =~ '^([0-9]+)\.([0-9]+)\.([0-9]+)(\.([0-9]+)|-(RC[0-9]+|M[0-9]+))?$' ]]; then
-			usage_error "Invalid release version '$v' (expected <major>.<minor>.<patch>, optionally .<hotfix> or -RC<n> or -M<n>)"
-		fi
-		if [[ -n "${match[6]}" && "${match[3]}" != 0 ]]; then
-			usage_error "Invalid release version '$v' (an RC or M version must have patch 0)"
-		fi
-		if (( ${+seen_version[$v]} )); then
-			usage_error "Release version '$v' is given more than once"
-		fi
-		seen_version[$v]=1
-		add_branch "release/$v"
-		is_release[release/$v]=1
-	done
-}
-
 build_branches() {
 	local b
 	if [[ $disclosures -eq 0 ]]; then
@@ -188,8 +156,7 @@ validate_remote_refs() {
 	done
 }
 
-# Ahead branches are pushed. A diverged release is forced. Behind is a problem,
-# and so is a diverged branch.
+# Ahead branches are pushed. Behind is a problem, and so is a diverged branch.
 check_state() {
 	local b
 	for b in "${all_branches[@]}"; do
@@ -199,17 +166,11 @@ check_state() {
 		[[ "$ab_behind" -eq 0 && "$ab_ahead" -eq 0 ]] && continue
 
 		if [[ "$ab_behind" -gt 0 && "$ab_ahead" -gt 0 ]]; then
-			if (( ${+is_release[$b]} )); then
-				push_name+=("$b"); push_kind+=(force); push_count+=("$ab_ahead")
-				push_lease+=("$(git rev-parse "refs/remotes/${up_remote[$b]}/${up_branch[$b]}")")
-				push_remote+=("${up_remote[$b]}")
-			else
-				problem "$b: diverged from $(upstream_display $b) ($ab_ahead ahead, $ab_behind behind), rebase or merge $(upstream_display $b) first"
-			fi
+			problem "$b: diverged from $(upstream_display $b) ($ab_ahead ahead, $ab_behind behind), rebase or merge $(upstream_display $b) first"
 		elif [[ "$ab_behind" -gt 0 ]]; then
 			problem "$b: behind $(upstream_display $b) by $ab_behind commit(s) (run git-branches-pull)"
 		else
-			push_name+=("$b"); push_kind+=(ahead); push_count+=("$ab_ahead"); push_lease+=("")
+			push_name+=("$b"); push_count+=("$ab_ahead")
 			push_remote+=("${up_remote[$b]}")
 		fi
 	done
@@ -237,17 +198,12 @@ print_plan() {
 		echo "  $r"
 		for (( i = 1; i <= ${#push_name[@]}; i++ )); do
 			[[ "${push_remote[$i]}" == "$r" ]] || continue
-			if [[ "${push_kind[$i]}" == force ]]; then
-				printf '    %-*s  diverged, forced (force-with-lease %s)\n' "$w" "${push_name[$i]}" "${push_lease[$i]:0:7}"
-			else
-				printf '    %-*s  ahead %s\n' "$w" "${push_name[$i]}" "${push_count[$i]}"
-			fi
+			printf '    %-*s  ahead %s\n' "$w" "${push_name[$i]}" "${push_count[$i]}"
 		done
 	done
 }
 
-# Sets `refs` to the arguments of the push to remote `r`. A forced release gets a
-# lease and no '+': a '+' in the refspec would override the lease.
+# Sets `refs` to the arguments of the push to remote `r`.
 build_refs() {
 	local r="$1" i b spec
 	refs=()
@@ -257,11 +213,6 @@ build_refs() {
 		spec="$b"
 		[[ "$b" == "${up_branch[$b]}" ]] || spec="$b:${up_branch[$b]}"
 		refs+=("$spec")
-	done
-	for (( i = 1; i <= ${#push_name[@]}; i++ )); do
-		[[ "${push_remote[$i]}" == "$r" && "${push_kind[$i]}" == force ]] || continue
-		b="${push_name[$i]}"
-		refs+=("--force-with-lease=${up_branch[$b]}:${push_lease[$i]}")
 	done
 }
 
@@ -304,9 +255,6 @@ while [[ $# -gt 0 ]]; do
 	case $1 in
 		--dry-run|-n) dry_run=1; shift ;;
 		--disclosures|--disclosure|-d) disclosures=1; shift ;;
-		--releases|-r)
-			[[ $# -ge 2 ]] || usage_error "$1 needs a comma separated list of versions"
-			releases_arg+="${releases_arg:+,}$2"; shift 2 ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) branches+=("$1"); shift ;;
@@ -316,8 +264,8 @@ done
 # ---------------------------------------------------------------------------
 # Argument checks (no git yet)
 # ---------------------------------------------------------------------------
-if [[ ${#branches[@]} -eq 0 && -z "$releases_arg" ]]; then
-	usage_error "At least one branch or --releases is required"
+if [[ ${#branches[@]} -eq 0 ]]; then
+	usage_error "At least one branch is required"
 fi
 if [[ $disclosures -eq 1 && ${#branches[@]} -eq 0 ]]; then
 	usage_error "--disclosures needs at least one generation branch"
@@ -332,7 +280,6 @@ for b in "${branches[@]}"; do
 done
 
 build_branches
-[[ -n "$releases_arg" ]] && parse_releases
 
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
 	echo "Error: Not in a git repository" >&2
@@ -373,9 +320,4 @@ fi
 # 5. Push.
 push_all
 
-n_rel=0
-for b in "${push_name[@]}"; do
-	(( ${+is_release[$b]} )) && (( n_rel++ ))
-done
-n_br=$(( ${#push_name[@]} - n_rel ))
-echo "Done. Pushed $n_br branch(es) and $n_rel release(s)."
+echo "Done. Pushed ${#push_name[@]} branch(es)."

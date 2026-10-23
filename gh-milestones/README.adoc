@@ -1,6 +1,6 @@
 = gh-milestones
 
-A zsh plugin that uses the `gh` CLI to list, create and re-date the milestones of an OSS repository (`<org>/<name>`) and its commercial repository (`<org>/<name>-commercial`), and to print milestone names on one line for the `--releases` option of the link:../git-branches[git-branches] plugins.
+A zsh plugin that uses the `gh` CLI to list, create and re-date the milestones of an OSS repository (`<org>/<name>`) and its commercial repository (`<org>/<name>-commercial`), and to print milestone names on one line.
 
 == Features
 
@@ -8,7 +8,7 @@ A zsh plugin that uses the `gh` CLI to list, create and re-date the milestones o
 * Repositories are discovered from the git remotes, and can be overridden with `--oss-repo` and `--commercial-repo`
 * `--due GLOB`, `--this-month` and `--next-month` select milestones by due date
 * `--oss-only`, `--commercial-only` and `--hotfixes` (commercial milestones with 4 part titles only) narrow the list by repository
-* `--oneline` prints the unique titles separated by commas on one line, ready for `--releases`
+* `--oneline` prints the unique titles separated by commas on one line
 * `create` creates milestones in the OSS repository, the commercial repository, or both, after checking that none of them exists (open or closed)
 * `set-due-date` sets the due date on the milestones with the given titles in both repositories
 * `--dry-run` validates and prints the exact `gh` commands that would run, and changes nothing
@@ -22,21 +22,7 @@ antigen bundle rwinch/zsh-plugins gh-milestones
 
 Or manually by adding the plugin directory to your `PATH`.
 
-The plugin defines the `ghm` alias and the `ghmr` function:
-
-[%header,cols="1,4"]
-|===
-| Name | Expands to
-| `ghm` | `gh-milestones`
-| `ghmr` | the unique titles of `gh-milestones list --oss-only --this-month --oneline` and `gh-milestones list --commercial-only --next-month --hotfixes --oneline`, on one comma separated line: OSS milestones due this month and commercial hotfixes (`<major>.<minor>.<patch>.<hotfix>`) due next month
-|===
-
-Extra arguments are passed through, so `ghmr --due '2026-12-*'` works.
-
-[source,bash]
-----
-git branches-fetch --releases "$(ghmr)"   # --releases 7.0.1,7.1.0-M1
-----
+The plugin defines the `ghm` alias for `gh-milestones`.
 
 == Repositories
 
@@ -82,7 +68,7 @@ gh-milestones [list|create|set-due-date] [OPTIONS]
 | `--oss-only` | `list` only. Only OSS milestones.
 | `--commercial-only` | `list` only. Only commercial milestones. Cannot be combined with `--oss-only`.
 | `--hotfixes` | `list` only. Only commercial milestones with 4 part titles (`<major>.<minor>.<patch>.<hotfix>`). OSS milestones are not affected, use `--commercial-only` to drop them.
-| `--quiet`, `-q` | `list` only. Do not print the repositories or the "No milestones matched" message to stderr. Errors are still printed. `ghmr` uses it.
+| `--quiet`, `-q` | `list` only. Do not print the repositories or the "No milestones matched" message to stderr. Errors are still printed.
 | `--oneline` | `list` only. Print the unique titles separated by commas on one line.
 | `--dry-run`, `-n` | `create` and `set-due-date` only. Validate and print the `gh` commands without running them.
 | `--help`, `-h` | Display the help message.
@@ -109,9 +95,6 @@ REPO        TITLE     STATE  DUE         OPEN  CLOSED
 oss         7.0.1     open   2026-10-20     4       9
 oss         7.1.0-M1  open   2026-10-27    12       2
 commercial  7.0.1     open   2026-10-20     1       3
-
-$ ghmr
-7.0.1
 
 $ gh-milestones create --oss 7.0.1 7.0.2 --commercial 7.0.1 --due 2026-11-17 -n
 Dry run, nothing was created. Checked open and closed milestones in each target repository: no conflicts.

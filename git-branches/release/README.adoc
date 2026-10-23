@@ -24,15 +24,6 @@ Or manually by adding the plugin directory to your `PATH`.
 
 The plugin also defines the alias `gbbr` for `git-branches-release`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
 
-To fill in the versions, use the `ghmr` function of link:../../gh-milestones[gh-milestones] (this month's OSS milestones and next month's commercial hotfixes as a comma separated list):
-
-[source,bash]
-----
-gbbr $(ghmr)
-----
-
-`gbbra` runs `git-branches-release rebase $(ghmr)` and passes any extra options on, for example `gbbra --dry-run`.
-
 == Usage
 
 [source,bash]

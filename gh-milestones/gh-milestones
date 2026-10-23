@@ -60,7 +60,7 @@ OPTIONS:
                                 (<major>.<minor>.<patch>.<hotfix>), OSS milestones are
                                 not affected (combine with --commercial-only to drop them)
   --oneline                     list only: print the unique titles separated by commas
-                                on one line, for --releases (e.g. 7.0.1,7.1.0-M1)
+                                on one line (e.g. 7.0.1,7.1.0-M1)
   --quiet, -q                   list only: do not print the repositories or the 'No milestones
                                 matched' message to stderr (errors are still printed)
   --dry-run, -n                 create/set-due-date: validate and print the gh

@@ -6,10 +6,7 @@ undo=0                   # --undo
 force_undo=0             # --force-undo
 done_word="reset"        # reset | undone, for the problem report
 disclosures=0            # --disclosures
-releases_arg=""          # --releases V1,V2
-releases_given=0
 typeset -a args          # positional args, in order
-typeset -a release_branches
 
 typeset -a wt_branches   # parallel array: branch name at index i
 typeset -a wt_paths      # parallel array: worktree path at index i
@@ -34,7 +31,6 @@ usage() {
 	cat <<EOF
 Usage: git-branches-reset-to-upstream [OPTIONS] BRANCH1 [BRANCH2 ...]
        git-branches-reset-to-upstream [OPTIONS] --disclosures GENERATION [GENERATION ...]
-       git-branches-reset-to-upstream [OPTIONS] --releases VERSION[,VERSION ...]
        git-branches-reset-to-upstream --undo [OPTIONS] (same arguments)
 
 Hard reset every given branch to its remote tracked (upstream) branch as of the
@@ -59,17 +55,14 @@ OPTIONS:
   --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
                        Each is reset together with disclosure/frozen/<generation>
                        and disclosure/active/<generation>.
-  --releases, -r LIST  Comma separated release versions, e.g. 7.0.1,7.0.1.1,7.1.0-RC1.
-                       release/<version> is reset. Can be combined with the above.
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-reset-to-upstream 7.0.x main
   git-branches-reset-to-upstream --dry-run --disclosures 7.0.x 7.1.x main
-  git-branches-reset-to-upstream -d 7.0.x main -r 7.0.1.1
   git-branches-reset-to-upstream --undo --dry-run 7.0.x main   # what would restoring the last reset do
   git-branches-reset-to-upstream --undo 7.0.x main
-  git-branches-reset-to-upstream \$(svaob) --releases \$(ghmr)   # OSS branches, this month's OSS and next month's hotfix releases
+  git-branches-reset-to-upstream \$(svaob)   # the OSS branches
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -159,27 +152,6 @@ in_progress_state() {
 
 add_branch() {
 	(( ${all_branches[(Ie)$1]} )) || all_branches+=("$1")
-}
-
-parse_releases() {
-	local -a items
-	local v patch pre
-	local -A seen
-	items=("${(@s:,:)releases_arg}")
-	for v in "${items[@]}"; do
-		if [[ ! "$v" =~ '^([0-9]+)\.([0-9]+)\.([0-9]+)(\.([0-9]+)|-(RC[0-9]+|M[0-9]+))?$' ]]; then
-			usage_error "Invalid release version '$v' (expected <major>.<minor>.<patch>, optionally .<hotfix> or -RC<n> or -M<n>)"
-		fi
-		patch="${match[3]}"; pre="${match[6]}"
-		if [[ -n "$pre" && "$patch" != 0 ]]; then
-			usage_error "Invalid release version '$v' (an RC or M version must have patch 0)"
-		fi
-		if (( ${+seen[$v]} )); then
-			usage_error "Release version '$v' is given more than once"
-		fi
-		seen[$v]=1
-		release_branches+=("release/$v")
-	done
 }
 
 # Branches exist, upstreams are set, worktrees are clean.
@@ -332,22 +304,14 @@ while [[ $# -gt 0 ]]; do
 		--undo|-u) undo=1; shift ;;
 		--force-undo) undo=1; force_undo=1; shift ;;
 		--disclosures|--disclosure|-d) disclosures=1; shift ;;
-		--releases|-r)
-			if [[ -z "$2" || "$2" == -* ]]; then
-				usage_error "$1 requires a value (e.g. 7.0.1,7.0.1.1)"
-			fi
-			releases_arg="$2"
-			releases_given=1
-			shift 2
-			;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) args+=("$1"); shift ;;
 	esac
 done
 
-if [[ ${#args[@]} -eq 0 && $releases_given -eq 0 ]]; then
-	usage_error "At least one branch is required (or use --releases)"
+if [[ ${#args[@]} -eq 0 ]]; then
+	usage_error "At least one branch is required"
 fi
 
 typeset -A seen_arg
@@ -357,8 +321,6 @@ for b in "${args[@]}"; do
 	fi
 	seen_arg[$b]=1
 done
-
-[[ $releases_given -eq 1 ]] && parse_releases
 
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
 	echo "Error: Not in a git repository" >&2
@@ -382,9 +344,6 @@ for b in "${args[@]}"; do
 		add_branch "disclosure/frozen/$b"
 		add_branch "disclosure/active/$b"
 	fi
-done
-for b in "${release_branches[@]}"; do
-	add_branch "$b"
 done
 
 validate_local

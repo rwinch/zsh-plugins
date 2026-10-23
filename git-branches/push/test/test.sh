@@ -96,18 +96,13 @@ t() {
 
 # ---------------------------------------------------------------------------
 t "args: no args, unknown option, missing list, --help" '
-	run; expect_rc 1; expect_out "At least one branch or --releases"
+	run; expect_rc 1; expect_out "At least one branch is required"
 	run -x 7.0.x; expect_rc 1; expect_out "Unknown option"
-	run --releases; expect_rc 1; expect_out "needs a comma separated list"
-	run -d --releases 7.0.1; expect_rc 1; expect_out "--disclosures needs at least one generation"
+	run --releases 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run -r 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run -d; expect_rc 1; expect_out "At least one branch is required"
 	run 7.0.x 7.0.x; expect_rc 1; expect_out "more than once"
 	run --help; expect_rc 0; expect_out "^Usage: git-branches-push"
-'
-
-t "args: release version format" '
-	run -r 7.0; expect_rc 1; expect_out "Invalid release version"
-	run -r 7.1.1-RC1; expect_rc 1; expect_out "patch 0"
-	run -r 7.0.1,7.0.1; expect_rc 1; expect_out "more than once"
 '
 
 t "up to date: one-liner" '
@@ -121,7 +116,7 @@ t "push: ahead branch is pushed" '
 	run 7.0.x main; expect_rc 0
 	expect_out "ahead 1"
 	expect_out "Pushing oss \.\.\. done"
-	expect_out "Done\. Pushed 1 branch\(es\) and 0 release\(s\)\."
+	expect_out "Done\. Pushed 1 branch\(es\)\."
 	[[ $(remote_sha oss 7.0.x) == $sha ]]
 '
 
@@ -167,55 +162,6 @@ t "validation: missing branch, missing upstream, gone upstream" '
 	git -C $R/oss.git branch -q -D 7.0.x
 	run 7.0.x; expect_rc 1
 	expect_out "7.0.x: upstream .oss/7.0.x. no longer exists"
-'
-
-t "releases: ahead release is a plain push" '
-	commit_on $W release/7.0.1 r.txt
-	git -C $W checkout -q 7.0.x
-	run -r 7.0.1; expect_rc 0
-	expect_out "ahead 1"
-	reject_out "force"
-	expect_out "Done\. Pushed 0 branch\(es\) and 1 release\(s\)\."
-	[[ $(remote_sha commercial release/7.0.1) == $(local_sha release/7.0.1) ]]
-'
-
-t "releases: diverged release is forced with a lease" '
-	local old=$(remote_sha commercial release/7.0.1)
-	git -C $W checkout -q release/7.0.1
-	git -C $W reset -q --hard HEAD~1
-	commit_on $W release/7.0.1 rebuilt.txt
-	git -C $W checkout -q 7.0.x
-	run -n -r 7.0.1; expect_rc 0
-	expect_out "diverged, forced \(force-with-lease ${old:0:7}\)"
-	expect_out "release/7.0.1 --force-with-lease=release/7.0.1:$old"
-	run -r 7.0.1; expect_rc 0
-	expect_out "Pushing commercial \.\.\. done"
-	[[ $(remote_sha commercial release/7.0.1) == $(local_sha release/7.0.1) ]]
-'
-
-t "releases: behind release is a problem" '
-	commit_on $S release/7.1.0 r.txt; git -C $S push -q commercial release/7.1.0
-	run -r 7.1.0; expect_rc 1
-	expect_out "release/7.1.0: behind commercial/release/7.1.0 by 1"
-'
-
-t "push failure: lease rejected reports what was and was not pushed" '
-	commit_on $W 7.0.x a.txt
-	git -C $W checkout -q release/7.0.1
-	git -C $W reset -q --hard HEAD~1
-	commit_on $W release/7.0.1 rebuilt.txt
-	git -C $W checkout -q 7.0.x
-	set +e
-	git -C $W fetch -q --all --prune
-	# somebody else moves the release after our fetch
-	commit_on $S release/7.0.1 other.txt; git -C $S push -q commercial release/7.0.1
-	out=$(cd $W && $SCRIPT 7.0.x -r 7.0.1 2>&1); rc=$?
-	set -e
-	expect_rc 1
-	expect_out "Pushing oss \.\.\. done"
-	expect_out "Pushing commercial \.\.\. failed"
-	expect_out "Pushed: oss\. Not pushed: commercial"
-	expect_out "stale info"
 '
 
 echo ""

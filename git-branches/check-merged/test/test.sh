@@ -94,12 +94,13 @@ t() {
 }
 
 # ---------------------------------------------------------------------------
-t "args: no args, single branch, unknown option, duplicates, release format" '
+t "args: no args, single branch, unknown option, duplicates, --releases is gone" '
 	run; expect_rc 1
 	run main; expect_rc 1; expect_out "single branch needs --disclosures"
 	run -x a b; expect_rc 1; expect_out "Unknown option"
 	run a a; expect_rc 1; expect_out "more than once"
-	run -r 7.0; expect_rc 1; expect_out "Invalid release version"
+	run --releases 7.0.1; expect_rc 1; expect_out "Unknown option"
+	run -r 7.0.1; expect_rc 1; expect_out "Unknown option"
 '
 
 t "local: merged chain exits 0, changes nothing, ignores dirty worktree" '
@@ -142,26 +143,22 @@ t "local and remote together, the error counts both" '
 	expect_out "2 of 2 check\(s\) not merged \(local, remote\)"
 '
 
-t "disclosures and releases" '
-	git -C $W branch -q release/7.0.1.1 commercial/release/7.0.1.1
-	run -d 7.0.x main -r 7.0.1.1; expect_rc 0
+t "disclosures" '
+	run -d 7.0.x main; expect_rc 0
 	expect_out "\\(4\\) disclosure/frozen/7.0.x -> disclosure/frozen/main +merged"
-	expect_out "release/7.0.1.1 contains disclosure/active/7.0.x +merged"
-	run -R -d 7.0.x main -r 7.0.1; expect_rc 0
-	expect_out "commercial/release/7.0.1 contains commercial/disclosure/frozen/7.0.x +merged"
+	run -R -d 7.0.x main; expect_rc 0
 	commit_on $W disclosure/frozen/7.0.x fz.txt
 	git -C $W push -q commercial disclosure/frozen/7.0.x
-	run -R -r 7.0.1; expect_rc 1
-	expect_out "commercial/release/7.0.1 contains commercial/disclosure/frozen/7.0.x +NOT MERGED, 1 commit"
-	expect_out "git log --oneline commercial/release/7.0.1..commercial/disclosure/frozen/7.0.x"
+	run -R -d 7.0.x main; expect_rc 1
+	expect_out "commercial/disclosure/frozen/7.0.x -> commercial/disclosure/frozen/main +NOT MERGED, 1 commit"
+	expect_out "git log --oneline commercial/disclosure/frozen/main..commercial/disclosure/frozen/7.0.x"
 '
 
-t "problems are reported together (missing branch, missing upstream, missing release)" '
+t "problems are reported together (missing branch, missing upstream)" '
 	git -C $W branch nofollow main
 	run 7.0.x nope nofollow; expect_rc 1; expect_out "nope: branch does not exist locally"
 	run -l 7.0.x nofollow; expect_rc 0
 	run -R 7.0.x nofollow; expect_rc 1; expect_out "nofollow: no upstream"
-	run -l -r 7.0.1; expect_rc 1; expect_out "release/7.0.1: branch does not exist locally"
 '
 
 echo ""

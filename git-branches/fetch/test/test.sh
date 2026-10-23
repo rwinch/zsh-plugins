@@ -103,11 +103,11 @@ publish() {
 	git -C $S push -q $1 $2
 }
 
-t "args: none, unknown option, duplicates, bad release" '
+t "args: none, unknown option, duplicates, --releases removed" '
 	run; expect_rc 1
 	run -x a; expect_rc 1; expect_out "Unknown option"
 	run a a; expect_rc 1; expect_out "more than once"
-	run -r 7.0; expect_rc 1; expect_out "Invalid release version"
+	run --releases 7.0.1 7.0.x; expect_rc 1; expect_out "Unknown option"
 '
 
 t "up to date" '
@@ -140,13 +140,11 @@ t "dirty worktree is not a problem" '
 	run 7.0.x; expect_rc 0
 '
 
-t "disclosures and releases fetch each remote once" '
-	git -C $W branch -q --track release/7.0.1 commercial/release/7.0.1
-	run -d 7.0.x main -r 7.0.1; expect_rc 0
+t "disclosures fetch each remote once" '
+	run -d 7.0.x main; expect_rc 0
 	expect_out "disclosure/frozen/7.0.x"
 	expect_out "disclosure/active/main"
-	expect_out "release/7.0.1 "
-	expect_out "2 remote\(s\), 7 branch\(es\)"
+	expect_out "2 remote\(s\), 6 branch\(es\)"
 	[[ $(print -r -- "$out" | grep -c "^Fetching .oss.") -eq 1 ]]
 '
 
