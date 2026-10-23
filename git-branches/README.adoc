@@ -48,7 +48,7 @@ gbbf $(svaob)
 gbbmf $(svaob)
 ----
 
-Functions fill in `$(svaob)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`, `gbbmfa` for `gbbmf` and `gbbdca` for `gbbdc` do the same.
+Functions fill in `$(svaob)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`, `gbbmfa` for `gbbmf` and `gbbdca` for `gbbdc` do the same. Except for `gbbdca`, they also add `--disclosures`, so the disclosure branches are included by default, and `--no-disclosures` leaves them out, for example `gbbfa --no-disclosures`.
 
 [#aliases]
 == Aliases

@@ -37,7 +37,7 @@ To fill in the branches, use the `svaob` alias of link:../../spring-versions[spr
 gbbmf $(svaob)
 ----
 
-`gbbmfa` does that for you and passes any extra options on, for example `gbbmfa --dry-run`.
+`gbbmfa` does that for you, adds `--disclosures` unless you give `--no-disclosures`, and passes any extra options on, for example `gbbmfa --dry-run`.
 
 == Usage
 

@@ -27,7 +27,7 @@ To fill in the branches, use the `svaob` alias of link:../../spring-versions[spr
 gbbcm $(svaob)
 ----
 
-The alias function `gbbcma` runs exactly that, and passes any extra options on, for example `gbbcma --disclosures`.
+The alias function `gbbcma` runs exactly that, and passes any extra options on, and adds `--disclosures` unless you give `--no-disclosures`, for example `gbbcma --no-disclosures`.
 
 == Usage
 
