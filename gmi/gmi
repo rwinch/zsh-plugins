@@ -22,6 +22,7 @@ OPTIONS:
 
 BEHAVIOR:
   - Lists the branches containing COMMIT with 'git branch --all --contains'.
+  - Output is never paged (git --no-pager).
   - Each git command is echoed to stderr as '\$ ...' before it runs.
   - The merge is the oldest commit on BRANCH's first-parent history that
     contains COMMIT. If it is a merge, its diff against its first parent is
@@ -70,12 +71,12 @@ git rev-parse --verify ${(q-)args[1]}^{commit}
 git rev-parse --verify ${(q-)args[2]}^{commit}
 git merge-base --is-ancestor <commit> <branch>
 git rev-list --first-parent --ancestry-path --reverse <commit>..<branch>   # first line is the merge
-git log -1 --stat <commit>
-git branch --all --contains <commit>
-git log -1 <merge>
+git --no-pager log -1 --stat <commit>
+git --no-pager branch --all --contains <commit>
+git --no-pager log -1 <merge>
 git diff-tree --no-commit-id --name-only -r <commit>   # files the commit touched
 git diff --quiet <merge>^1 <merge> -- <files>          # empty means ours
-git diff <merge>^1 <merge> -- <files>
+git --no-pager diff <merge>^1 <merge> -- <files>
 EOT
 	exit 0
 fi
@@ -102,7 +103,7 @@ run() {
 
 # Same as run, but with git's color and quoting settings for the report
 git_run() {
-	run git "${color[@]}" -c core.quotePath=false "$@"
+	run git --no-pager "${color[@]}" -c core.quotePath=false "$@"
 }
 
 heading() {
