@@ -1,0 +1,73 @@
+= git-branches-embargoed-create
+
+A zsh plugin that creates the `embargoed/frozen/<generation>` and `embargoed/active/<generation>` branches of new OSS generations, with their upstream set to the commercial remote. It never pushes: it prints the `git push --atomic` command.
+
+== Features
+
+* `git branches-embargoed-create 7.2.x main` creates `embargoed/frozen/7.2.x`, `embargoed/active/7.2.x`, `embargoed/frozen/main` and `embargoed/active/main`, each at the sha of `oss/<generation>`
+* The upstream of each branch is the same branch on the commercial remote. That branch does not exist yet, so link:../fetch[git-branches-fetch] reports it as gone until the printed push is done
+* `--oss-remote` and `--commercial-remote` choose other remote names (defaults `oss` and `commercial`)
+* `--dry-run` validates and prints the plan, and creates nothing
+* Never fetches: run link:../fetch[git-branches-fetch] first
+* Everything is validated first and all problems are reported together: both remotes exist, `oss/<generation>` exists, the local branches do not exist, and the commercial branches do not exist (those should be tracked with `git branch --track` instead)
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins git-branches/embargoed-create
+----
+
+The plugin also defines the alias `gbbec` for `git-branches-embargoed-create`. See link:../README.adoc#aliases[the group README] for how the `gbb` prefix avoids alias collisions.
+
+To fill in the OSS branches, use `gbbeca`, which runs `gbbec $(svaob)` (the `svaob` alias of link:../../spring-versions[spring-versions]) and passes any extra options on. Generations that already have embargoed branches are reported as problems, so use it only when all of them are new, otherwise name the new generations:
+
+[source,bash]
+----
+gbbeca --dry-run
+gbbec 7.2.x main
+----
+
+== Usage
+
+[source,bash]
+----
+git branches-embargoed-create [OPTIONS] GENERATION [GENERATION ...]
+----
+
+|===
+|Option |Description
+
+|`--oss-remote REMOTE`
+|The OSS remote (default `oss`)
+
+|`--commercial-remote REMOTE`
+|The commercial remote (default `commercial`)
+
+|`--dry-run`, `-n`
+|Validate and print the plan. Nothing is created.
+
+|`--help`, `-h`
+|Display the help message
+|===
+
+== Example
+
+----
+$ gbbec 7.2.x main
+Creating:
+  embargoed/frozen/7.2.x  at oss/7.2.x  (a1b2c3d)  upstream commercial/embargoed/frozen/7.2.x (not pushed yet)
+  embargoed/active/7.2.x  at oss/7.2.x  (a1b2c3d)  upstream commercial/embargoed/active/7.2.x (not pushed yet)
+  embargoed/frozen/main   at oss/main   (e4f5a6b)  upstream commercial/embargoed/frozen/main (not pushed yet)
+  embargoed/active/main   at oss/main   (e4f5a6b)  upstream commercial/embargoed/active/main (not pushed yet)
+
+Created 4 branch(es). Push them to create the upstream branches:
+  git push --atomic commercial embargoed/frozen/7.2.x embargoed/active/7.2.x embargoed/frozen/main embargoed/active/main
+----
+
+== Tests
+
+[source,bash]
+----
+zsh test/test.sh
+----

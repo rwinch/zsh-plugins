@@ -16,16 +16,16 @@ nl=$'\n'
 
 usage() {
 	cat <<EOF
-Usage: git-branches-disclosure-create [OPTIONS] GENERATION [GENERATION ...]
+Usage: git-branches-embargoed-create [OPTIONS] GENERATION [GENERATION ...]
 
-Creates disclosure/frozen/<generation> and disclosure/active/<generation> at
+Creates embargoed/frozen/<generation> and embargoed/active/<generation> at
 the OSS branch <generation> (7.0.x main) for every generation, with their upstream
 set to the same branch on the commercial remote. The commercial branches do not
 exist yet, so nothing is pushed: the git push command is printed.
 
 Everything is validated before anything is created, and all problems are reported
-together: both remotes exist, the OSS branch exists, the local disclosure branches
-do not exist yet, and the commercial disclosure branches do not exist yet (track
+together: both remotes exist, the OSS branch exists, the local embargoed branches
+do not exist yet, and the commercial embargoed branches do not exist yet (track
 those with git branch --track instead). Nothing is fetched, run git-branches-fetch
 first.
 
@@ -36,9 +36,9 @@ OPTIONS:
   --help, -h                  Display this help message
 
 EXAMPLES:
-  git-branches-disclosure-create 7.2.x
-  git-branches-disclosure-create 7.2.x main
-  git-branches-disclosure-create --dry-run 7.2.x
+  git-branches-embargoed-create 7.2.x
+  git-branches-embargoed-create 7.2.x main
+  git-branches-embargoed-create --dry-run 7.2.x
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -48,7 +48,7 @@ EOF
 
 usage_error() {
 	echo "Error: $1" >&2
-	echo "Run 'git-branches-disclosure-create --help' for usage." >&2
+	echo "Run 'git-branches-embargoed-create --help' for usage." >&2
 	exit 1
 }
 
@@ -129,7 +129,7 @@ for g in "${generations[@]}"; do
 	fi
 	sha=$(git rev-parse --short "$src")
 	for role in frozen active; do
-		b="disclosure/$role/$g"
+		b="embargoed/$role/$g"
 		bad=0
 		if ref_exists "refs/heads/$b"; then
 			problem "$b: already exists locally"
