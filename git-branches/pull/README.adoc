@@ -1,11 +1,11 @@
 = git-branches-pull
 
-A zsh plugin that fast-forwards several branches to their remote tracked branches in one go, across git worktrees, with `--disclosures` support like link:../merge-forward[git-branches-merge-forward] and link:../reset-to-upstream[git-branches-reset-to-upstream].
+A zsh plugin that fast-forwards several branches to their remote tracked branches in one go, across git worktrees, with `--embargoed` support like link:../merge-forward[git-branches-merge-forward] and link:../reset-to-upstream[git-branches-reset-to-upstream].
 
 == Features
 
 * `git branches-pull 7.0.x main` fetches, then fast-forwards each branch to its upstream
-* `--disclosures` also pulls `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
+* `--embargoed` also pulls `embargoed/frozen/<generation>` and `embargoed/active/<generation>`
 * A branch checked out in a worktree is fast-forwarded there (`git merge --ff-only`), any other branch is moved with `git branch -f`
 * Never creates merge commits and never discards local commits
 * A branch that is only ahead of its upstream is skipped
@@ -34,7 +34,7 @@ gbbpl $(svaob)
 [source,bash]
 ----
 git branches-pull [OPTIONS] BRANCH [BRANCH ...]
-git branches-pull [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git branches-pull [OPTIONS] --embargoed GENERATION [GENERATION ...]
 ----
 
 |===
@@ -43,8 +43,8 @@ git branches-pull [OPTIONS] --disclosures GENERATION [GENERATION ...]
 |`--dry-run`, `-n`
 |Fetch, validate and print the plan. Nothing is pulled.
 
-|`--disclosures`, `-d`
-|Arguments are OSS generations. Each is pulled with its disclosure frozen and active branches. `--disclosure` is accepted too.
+|`--embargoed`, `-e`
+|Arguments are OSS generations. Each is pulled with its embargoed frozen and active branches.
 
 |`--help`, `-h`
 |Show help.
@@ -55,7 +55,7 @@ git branches-pull [OPTIONS] --disclosures GENERATION [GENERATION ...]
 [source,bash]
 ----
 git branches-pull 7.0.x main
-git branches-pull --dry-run --disclosures 7.0.x 7.1.x main
+git branches-pull --dry-run --embargoed 7.0.x 7.1.x main
 git branches-pull -d 7.0.x main
 ----
 

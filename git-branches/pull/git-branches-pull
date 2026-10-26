@@ -2,7 +2,7 @@
 
 # ---- options ----
 dry_run=0                # --dry-run
-disclosures=0            # --disclosures
+embargoed=0              # --embargoed
 typeset -a args          # positional args, in order
 
 typeset -a wt_branches   # parallel array: branch name at index i
@@ -22,7 +22,7 @@ nl=$'\n'
 usage() {
 	cat <<EOF
 Usage: git-branches-pull [OPTIONS] BRANCH1 [BRANCH2 ...]
-       git-branches-pull [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-branches-pull [OPTIONS] --embargoed GENERATION [GENERATION ...]
 
 Fetch and fast-forward every given branch to its remote tracked (upstream)
 branch. A branch checked out in a worktree is fast-forwarded in that worktree
@@ -36,15 +36,15 @@ count). A branch that is only ahead of its upstream is skipped.
 
 OPTIONS:
   --dry-run, -n        Fetch, validate and print what would happen. Nothing is pulled.
-  --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
-                       Each is pulled together with disclosure/frozen/<generation>
-                       and disclosure/active/<generation>.
+  --embargoed, -e      The arguments are OSS generation branches (7.0.x 7.1.x main).
+                       Each is pulled together with embargoed/frozen/<generation>
+                       and embargoed/active/<generation>.
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-pull 7.0.x main
-  git-branches-pull --dry-run --disclosures 7.0.x 7.1.x main
-  git-branches-pull -d 7.0.x main
+  git-branches-pull --dry-run --embargoed 7.0.x 7.1.x main
+  git-branches-pull -e 7.0.x main
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -218,7 +218,7 @@ print_plan() {
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--dry-run|-n) dry_run=1; shift ;;
-		--disclosures|--disclosure|-d) disclosures=1; shift ;;
+		--embargoed|-e) embargoed=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) args+=("$1"); shift ;;
@@ -254,9 +254,9 @@ build_worktree_map
 
 for b in "${args[@]}"; do
 	add_branch "$b"
-	if [[ $disclosures -eq 1 ]]; then
-		add_branch "disclosure/frozen/$b"
-		add_branch "disclosure/active/$b"
+	if [[ $embargoed -eq 1 ]]; then
+		add_branch "embargoed/frozen/$b"
+		add_branch "embargoed/active/$b"
 	fi
 done
 

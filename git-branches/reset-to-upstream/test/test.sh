@@ -17,7 +17,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_EDITOR=true
 
 # ---- fixture ----
 # $R root, $S seed repo, $W work clone. Branches: 7.0.x main (oss);
-# disclosure/{frozen,active}/{7.0.x,main}, release/7.0.1, release/7.0.1.1,
+# embargoed/{frozen,active}/{7.0.x,main}, release/7.0.1, release/7.0.1.1,
 # release/7.1.0 (commercial). Each release has one release-only LICENSE commit.
 setup() {
 	R=$(mktemp -d); R=${R:A}
@@ -31,24 +31,24 @@ setup() {
 	git -C $S branch 7.0.x
 	local g role
 	for g in 7.0.x main; do
-		for role in frozen active; do git -C $S branch disclosure/$role/$g $g; done
+		for role in frozen active; do git -C $S branch embargoed/$role/$g $g; done
 	done
 	local rel from
-	for rel in "release/7.0.1 disclosure/frozen/7.0.x" "release/7.0.1.1 disclosure/active/7.0.x" "release/7.1.0 disclosure/frozen/main"; do
+	for rel in "release/7.0.1 embargoed/frozen/7.0.x" "release/7.0.1.1 embargoed/active/7.0.x" "release/7.1.0 embargoed/frozen/main"; do
 		set -- ${=rel}
 		git -C $S checkout -q -b $1 $2
 		echo lic > $S/LICENSE; git -C $S add LICENSE; git -C $S commit -qm "license $1"
 	done
 	git -C $S checkout -q main
 	git -C $S push -q oss main 7.0.x
-	git -C $S push -q commercial 'refs/heads/disclosure/*' 'refs/heads/release/*'
+	git -C $S push -q commercial 'refs/heads/embargoed/*' 'refs/heads/release/*'
 	git clone -q -o oss $R/oss.git $W 2>/dev/null
 	git -C $W remote add commercial $R/commercial.git
 	git -C $W fetch -q commercial
 	git -C $W branch -q --track 7.0.x oss/7.0.x
 	for g in 7.0.x main; do
 		for role in frozen active; do
-			git -C $W branch -q --track disclosure/$role/$g commercial/disclosure/$role/$g
+			git -C $W branch -q --track embargoed/$role/$g commercial/embargoed/$role/$g
 		done
 	done
 	git -C $W checkout -q 7.0.x
@@ -149,17 +149,12 @@ t "diverged branch is reset" '
 	[[ $(sha main) == $(sha oss/main) ]]
 '
 
-t "disclosures are expanded" '
-	commit_on $W disclosure/frozen/7.0.x a.txt
+t "embargoed branches are expanded" '
+	commit_on $W embargoed/frozen/7.0.x a.txt
 	git -C $W checkout -q 7.0.x
-	run -d 7.0.x; expect_rc 0
-	expect_out "disclosure/active/7.0.x"
-	[[ $(sha disclosure/frozen/7.0.x) == $(sha commercial/disclosure/frozen/7.0.x) ]]
-'
-
-t "--disclosure alias works" '
-	run -n --disclosure 7.0.x; expect_rc 0
-	expect_out "disclosure/frozen/7.0.x"
+	run -e 7.0.x; expect_rc 0
+	expect_out "embargoed/active/7.0.x"
+	[[ $(sha embargoed/frozen/7.0.x) == $(sha commercial/embargoed/frozen/7.0.x) ]]
 '
 
 t "dirty worktree and missing branch are rejected together" '
@@ -248,16 +243,16 @@ t "undo: dirty worktree and missing branch are rejected together" '
 	expect_out "Nothing was undone"
 '
 
-t "undo: --disclosures is expanded" '
+t "undo: --embargoed is expanded" '
 	commit_on $W 7.0.x a.txt
 	git -C $W checkout -q -b feat 7.0.x
-	commit_on $W disclosure/frozen/7.0.x r.txt
-	local r=$(sha disclosure/frozen/7.0.x)
+	commit_on $W embargoed/frozen/7.0.x r.txt
+	local r=$(sha embargoed/frozen/7.0.x)
 	git -C $W checkout -q 7.0.x
-	run -d 7.0.x; expect_rc 0
-	run -u -d 7.0.x; expect_rc 0
-	expect_out "disclosure/frozen/7.0.x .*was ${r[1,7]} before the reset"
-	[[ $(sha disclosure/frozen/7.0.x) == $r ]]
+	run -e 7.0.x; expect_rc 0
+	run -u -e 7.0.x; expect_rc 0
+	expect_out "embargoed/frozen/7.0.x .*was ${r[1,7]} before the reset"
+	[[ $(sha embargoed/frozen/7.0.x) == $r ]]
 '
 
 echo ""

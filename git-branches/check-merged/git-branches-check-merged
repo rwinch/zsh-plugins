@@ -3,7 +3,7 @@
 # ---- options ----
 check_local=0            # --local
 check_remote=0           # --remote
-disclosures=0            # --disclosures
+embargoed=0              # --embargoed
 typeset -a branches      # positional args, in order
 
 # ---- the plan: parallel arrays, one entry per hop ----
@@ -22,10 +22,10 @@ nl=$'\n'
 usage() {
 	cat <<USAGE
 Usage: git-branches-check-merged [OPTIONS] BRANCH1 [BRANCH2 ...]
-       git-branches-check-merged [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-branches-check-merged [OPTIONS] --embargoed GENERATION [GENERATION ...]
 
 Check that a chain of branches is merged forward: BRANCH1 is contained in
-BRANCH2, BRANCH2 in BRANCH3, ... The chain and the --disclosures
+BRANCH2, BRANCH2 in BRANCH3, ... The chain and the --embargoed
 argument are the same as for git-branches-merge-forward, so the same arguments can be
 used to merge and then to check.
 
@@ -38,15 +38,15 @@ OPTIONS:
   --local, -l          Check the local branches (the default)
   --remote, -R         Check the upstream (remote tracking) branches, as of the
                        last fetch. Can be combined with --local.
-  --disclosures, -d    The arguments are OSS generation branches, oldest to newest
+  --embargoed, -e      The arguments are OSS generation branches, oldest to newest
                        (7.0.x 7.1.x main). Checks the same hops as
-                       git-branches-merge-forward --disclosures.
+                       git-branches-merge-forward --embargoed.
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-check-merged 7.0.x 7.1.x main
-  git-branches-check-merged --remote --disclosures 7.0.x main
-  git-branches-check-merged -l -R -d 7.0.x main
+  git-branches-check-merged --remote --embargoed 7.0.x main
+  git-branches-check-merged -l -R -e 7.0.x main
   git-branches-check-merged \$(svaob)   # the OSS branches
 
 REQUIREMENTS:
@@ -110,7 +110,7 @@ add_hop() {
 
 build_plan() {
 	local i n
-	if [[ $disclosures -eq 0 ]]; then
+	if [[ $embargoed -eq 0 ]]; then
 		for (( i = 2; i <= ${#branches[@]}; i++ )); do
 			add_hop "${branches[$((i - 1))]}" "${branches[$i]}" across
 		done
@@ -127,12 +127,12 @@ build_plan() {
 	for role in frozen active; do
 		for (( i = 1; i <= n; i++ )); do
 			if [[ "$role" == frozen ]]; then
-				add_hop "${gens[$i]}" "disclosure/frozen/${gens[$i]}" down
+				add_hop "${gens[$i]}" "embargoed/frozen/${gens[$i]}" down
 			else
-				add_hop "disclosure/frozen/${gens[$i]}" "disclosure/active/${gens[$i]}" down
+				add_hop "embargoed/frozen/${gens[$i]}" "embargoed/active/${gens[$i]}" down
 			fi
 			if (( i > 1 )); then
-				add_hop "disclosure/$role/${gens[$((i - 1))]}" "disclosure/$role/${gens[$i]}" across
+				add_hop "embargoed/$role/${gens[$((i - 1))]}" "embargoed/$role/${gens[$i]}" across
 			fi
 		done
 	done
@@ -229,7 +229,7 @@ while [[ $# -gt 0 ]]; do
 	case $1 in
 		--local|-l) check_local=1; shift ;;
 		--remote|-R) check_remote=1; shift ;;
-		--disclosures|--disclosure|-d) disclosures=1; shift ;;
+		--embargoed|-e) embargoed=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) branches+=("$1"); shift ;;
@@ -237,12 +237,12 @@ while [[ $# -gt 0 ]]; do
 done
 (( check_local || check_remote )) || check_local=1
 
-if [[ $disclosures -eq 1 ]]; then
-	[[ ${#branches[@]} -ge 1 ]] || usage_error "--disclosures needs at least one generation branch"
+if [[ $embargoed -eq 1 ]]; then
+	[[ ${#branches[@]} -ge 1 ]] || usage_error "--embargoed needs at least one generation branch"
 elif [[ ${#branches[@]} -eq 0 ]]; then
-	usage_error "At least two branches are required (or use --disclosures)"
+	usage_error "At least two branches are required (or use --embargoed)"
 elif [[ ${#branches[@]} -eq 1 ]]; then
-	usage_error "At least two branches are required (a single branch needs --disclosures)"
+	usage_error "At least two branches are required (a single branch needs --embargoed)"
 fi
 
 typeset -A seen_arg

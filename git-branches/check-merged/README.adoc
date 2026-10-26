@@ -1,11 +1,11 @@
 = git-branches-check-merged
 
-A zsh plugin that checks that a chain of branches is merged forward, on the local branches, on their remote tracking equivalents, or both. It takes the same chain and `--disclosures` arguments as link:../merge-forward[git-branches-merge-forward], link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
+A zsh plugin that checks that a chain of branches is merged forward, on the local branches, on their remote tracking equivalents, or both. It takes the same chain and `--embargoed` arguments as link:../merge-forward[git-branches-merge-forward], link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
 
 == Features
 
 * `git branches-check-merged 7.0.x 7.1.x main` checks that `7.0.x` is contained in `7.1.x`, and `7.1.x` in `main`
-* `--disclosures` checks the same hops as `git-branches-merge-forward --disclosures`
+* `--embargoed` checks the same hops as `git-branches-merge-forward --embargoed`
 * `--local` (the default) checks the local branches, `--remote` checks their upstream refs, and both can be combined
 * Read-only: nothing is fetched and nothing is changed, and worktrees may be dirty. Run `git fetch` first to check what is on the remote now.
 * Exits 0 when everything is merged and 1 otherwise, and lists the commits that are not merged
@@ -27,14 +27,14 @@ To fill in the branches, use the `svaob` alias of link:../../spring-versions[spr
 gbbcm $(svaob)
 ----
 
-The alias function `gbbcma` runs that, adds `--disclosures` unless you give `--no-disclosures`, and passes any extra options on, for example `gbbcma --no-disclosures`.
+The alias function `gbbcma` runs that, adds `--embargoed` unless you give `--no-embargoed`, and passes any extra options on, for example `gbbcma --no-embargoed`.
 
 == Usage
 
 [source,bash]
 ----
 git branches-check-merged [OPTIONS] BRANCH1 BRANCH2 [BRANCH3 ...]
-git branches-check-merged [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git branches-check-merged [OPTIONS] --embargoed GENERATION [GENERATION ...]
 ----
 
 |===
@@ -46,8 +46,8 @@ git branches-check-merged [OPTIONS] --disclosures GENERATION [GENERATION ...]
 |`--remote`, `-R`
 |Check the upstream (remote tracking) branches, as of the last fetch. Can be combined with `--local`.
 
-|`--disclosures`, `-d`
-|Arguments are OSS generations. Checks the hops `git-branches-merge-forward --disclosures` would merge. `--disclosure` is accepted too.
+|`--embargoed`, `-e`
+|Arguments are OSS generations. Checks the hops `git-branches-merge-forward --embargoed` would merge.
 
 |`--help`, `-h`
 |Show help.
@@ -57,11 +57,11 @@ git branches-check-merged [OPTIONS] --disclosures GENERATION [GENERATION ...]
 
 [source,text]
 ----
-$ git branches-check-merged --disclosures 7.0.x main
+$ git branches-check-merged --embargoed 7.0.x main
 Checking local branches:
   (1) 7.0.x                   -> main                      merged
-  (3) main                    -> disclosure/frozen/main    NOT MERGED, 2 commit(s)
-        git log --oneline disclosure/frozen/main..main
+  (3) main                    -> embargoed/frozen/main    NOT MERGED, 2 commit(s)
+        git log --oneline embargoed/frozen/main..main
         a1b2c3d Fix thing
         e4f5a6b Other fix
 
@@ -75,7 +75,7 @@ With `--remote` the names are the upstream refs (`oss/7.0.x -> oss/main`). A bra
 [source,bash]
 ----
 git branches-check-merged 7.0.x 7.1.x main
-git branches-check-merged --remote --disclosures 7.0.x main
+git branches-check-merged --remote --embargoed 7.0.x main
 git branches-check-merged -l -R -d 7.0.x main
 ----
 

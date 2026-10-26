@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # ---- options ----
-disclosures=0            # --disclosures
+embargoed=0              # --embargoed
 typeset -a args          # positional args, in order
 
 typeset -a all_branches  # every branch to report, in order
@@ -18,7 +18,7 @@ nl=$'\n'
 usage() {
 	cat <<EOF
 Usage: git-branches-fetch [OPTIONS] BRANCH1 [BRANCH2 ...]
-       git-branches-fetch [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-branches-fetch [OPTIONS] --embargoed GENERATION [GENERATION ...]
 
 Fetch the remote of every given branch's tracked (upstream) branch, pruning
 branches deleted on the remote, then report how each branch compares to its
@@ -30,15 +30,15 @@ reported together before anything is fetched. A diverged branch or an upstream
 that is gone is reported but is not an error.
 
 OPTIONS:
-  --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
-                       Each is reported together with disclosure/frozen/<generation>
-                       and disclosure/active/<generation>.
+  --embargoed, -e      The arguments are OSS generation branches (7.0.x 7.1.x main).
+                       Each is reported together with embargoed/frozen/<generation>
+                       and embargoed/active/<generation>.
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-fetch 7.0.x main
-  git-branches-fetch --disclosures 7.0.x 7.1.x main
-  git-branches-fetch -d 7.0.x main
+  git-branches-fetch --embargoed 7.0.x 7.1.x main
+  git-branches-fetch -e 7.0.x main
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -147,7 +147,7 @@ print_report() {
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
 	case $1 in
-		--disclosures|--disclosure|-d) disclosures=1; shift ;;
+		--embargoed|-e) embargoed=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) args+=("$1"); shift ;;
@@ -176,9 +176,9 @@ fi
 # ---------------------------------------------------------------------------
 for b in "${args[@]}"; do
 	add_branch "$b"
-	if [[ $disclosures -eq 1 ]]; then
-		add_branch "disclosure/frozen/$b"
-		add_branch "disclosure/active/$b"
+	if [[ $embargoed -eq 1 ]]; then
+		add_branch "embargoed/frozen/$b"
+		add_branch "embargoed/active/$b"
 	fi
 done
 

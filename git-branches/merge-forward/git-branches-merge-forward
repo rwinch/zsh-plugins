@@ -4,7 +4,7 @@
 dry_run=0                # --dry-run
 allow_ahead=0            # --allow-ahead
 ours=0                   # --ours
-disclosures=0            # --disclosures
+embargoed=0              # --embargoed
 pause_after_merge=0      # --pause
 typeset -a branches      # positional args, in order
 
@@ -36,7 +36,7 @@ nl=$'\n'
 usage() {
 	cat <<EOF
 Usage: git-branches-merge-forward [OPTIONS] BRANCH1 [BRANCH2 ...]
-       git-branches-merge-forward [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-branches-merge-forward [OPTIONS] --embargoed GENERATION [GENERATION ...]
 
 Merge a chain of branches forward: BRANCH1 -> BRANCH2 -> ... Each branch is
 merged in the worktree that has it checked out, or in the directory you run
@@ -62,9 +62,9 @@ OPTIONS:
                        carried, so no conflicts). Down hops stay real merges.
                        Use it when each branch has its own version/dependency
                        updates that must not merge across.
-  --disclosures, -d    The arguments are OSS generation branches, oldest to newest
+  --embargoed, -e      The arguments are OSS generation branches, oldest to newest
                        (7.0.x 7.1.x main). Merges across, then for frozen and
-                       active each disclosure/<role>/<generation> branch down
+                       active each embargoed/<role>/<generation> branch down
                        (OSS -> frozen -> active) and across.
   --pause, -P          After each merge, stop so the result can be
                        validated, and say which directory to do it in
@@ -74,16 +74,16 @@ EXAMPLES:
   git-branches-merge-forward 7.0.x 7.1.x main
   git-branches-merge-forward --dry-run 7.0.x main
   git-branches-merge-forward --allow-ahead 7.0.x main        # resume after an abort
-  git-branches-merge-forward --disclosures 7.0.x main
-  git-branches-merge-forward -n -d 7.0.x main
+  git-branches-merge-forward --embargoed 7.0.x main
+  git-branches-merge-forward -n -e 7.0.x main
   git-branches-merge-forward \$(svaob)   # svaob (spring-versions): the OSS branches on one line
 
 DEPENDENCY UPDATES:
   If 7.0.x, 7.1.x and main each carry their own unpushed dependency updates
   that must not merge across, run:
-    git-branches-merge-forward --ours --allow-ahead --disclosures 7.0.x 7.1.x main
-  Across hops (OSS and disclosure) are recorded with 'git merge -s ours', and the
-  down hops into each disclosure branch are real merges, so every generation
+    git-branches-merge-forward --ours --allow-ahead --embargoed 7.0.x 7.1.x main
+  Across hops (OSS and embargoed) are recorded with 'git merge -s ours', and the
+  down hops into each embargoed branch are real merges, so every generation
   keeps its own updates. --allow-ahead is needed because 7.1.x and main are ahead
   of their upstreams; drop it if those updates are already pushed.
 
@@ -227,7 +227,7 @@ add_hop() {
 
 build_plan() {
 	local i n
-	if [[ $disclosures -eq 0 ]]; then
+	if [[ $embargoed -eq 0 ]]; then
 		for (( i = 2; i <= ${#branches[@]}; i++ )); do
 			add_hop "${branches[$((i - 1))]}" "${branches[$i]}" across
 		done
@@ -244,12 +244,12 @@ build_plan() {
 	for role in frozen active; do
 		for (( i = 1; i <= n; i++ )); do
 			if [[ "$role" == frozen ]]; then
-				add_hop "${gens[$i]}" "disclosure/frozen/${gens[$i]}" down
+				add_hop "${gens[$i]}" "embargoed/frozen/${gens[$i]}" down
 			else
-				add_hop "disclosure/frozen/${gens[$i]}" "disclosure/active/${gens[$i]}" down
+				add_hop "embargoed/frozen/${gens[$i]}" "embargoed/active/${gens[$i]}" down
 			fi
 			if (( i > 1 )); then
-				add_hop "disclosure/$role/${gens[$((i - 1))]}" "disclosure/$role/${gens[$i]}" across
+				add_hop "embargoed/$role/${gens[$((i - 1))]}" "embargoed/$role/${gens[$i]}" across
 			fi
 		done
 	done
@@ -497,7 +497,7 @@ pause_for_validation() {
 merge_branch() {
 	local source="$1" target="$2" kind="$3"
 	local dir current rc
-	local msg_source="${source#disclosure/*/}" msg_target="${target#disclosure/*/}"
+	local msg_source="${source#embargoed/*/}" msg_target="${target#embargoed/*/}"
 	local -a cmd
 
 	while true; do
@@ -520,7 +520,7 @@ merge_branch() {
 		if [[ $ours -eq 1 && "$kind" == across ]]; then
 			cmd=(git -C "$dir" merge -s ours --no-ff -m "merge(ours): $msg_source into $msg_target" "$source")
 		elif [[ "$msg_source" != "$source" || "$msg_target" != "$target" ]]; then
-			# disclosure branches read as their generation branches in history
+			# embargoed branches read as their generation branches in history
 			cmd=(git -C "$dir" merge --no-edit -m "Merge branch '$msg_source' into '$msg_target'" "$source")
 		else
 			cmd=(git -C "$dir" merge --no-edit "$source")
@@ -578,7 +578,7 @@ while [[ $# -gt 0 ]]; do
 		--dry-run|-n) dry_run=1; shift ;;
 		--allow-ahead|-a) allow_ahead=1; shift ;;
 		--ours|-o) ours=1; shift ;;
-		--disclosures|-d) disclosures=1; shift ;;
+		--embargoed|-e) embargoed=1; shift ;;
 		--pause|-P) pause_after_merge=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
@@ -589,12 +589,12 @@ done
 # ---------------------------------------------------------------------------
 # Argument checks (no git yet)
 # ---------------------------------------------------------------------------
-if [[ $disclosures -eq 1 ]]; then
-	[[ ${#branches[@]} -ge 1 ]] || usage_error "--disclosures needs at least one generation branch"
+if [[ $embargoed -eq 1 ]]; then
+	[[ ${#branches[@]} -ge 1 ]] || usage_error "--embargoed needs at least one generation branch"
 elif [[ ${#branches[@]} -eq 0 ]]; then
-	usage_error "At least two branches are required (or use --disclosures)"
+	usage_error "At least two branches are required (or use --embargoed)"
 elif [[ ${#branches[@]} -eq 1 ]]; then
-	usage_error "At least two branches are required (a single branch needs --disclosures)"
+	usage_error "At least two branches are required (a single branch needs --embargoed)"
 fi
 
 typeset -A seen_arg

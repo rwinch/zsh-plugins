@@ -17,7 +17,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_EDITOR=true
 
 # ---- fixture ----
 # $R root, $S seed repo, $W work clone. Branches: 7.0.x main (oss);
-# disclosure/{frozen,active}/{7.0.x,main}, release/7.0.1, release/7.0.1.1,
+# embargoed/{frozen,active}/{7.0.x,main}, release/7.0.1, release/7.0.1.1,
 # release/7.1.0 (commercial). Each release has one release-only LICENSE commit.
 setup() {
 	R=$(mktemp -d); R=${R:A}
@@ -31,24 +31,24 @@ setup() {
 	git -C $S branch 7.0.x
 	local g role
 	for g in 7.0.x main; do
-		for role in frozen active; do git -C $S branch disclosure/$role/$g $g; done
+		for role in frozen active; do git -C $S branch embargoed/$role/$g $g; done
 	done
 	local rel from
-	for rel in "release/7.0.1 disclosure/frozen/7.0.x" "release/7.0.1.1 disclosure/active/7.0.x" "release/7.1.0 disclosure/frozen/main"; do
+	for rel in "release/7.0.1 embargoed/frozen/7.0.x" "release/7.0.1.1 embargoed/active/7.0.x" "release/7.1.0 embargoed/frozen/main"; do
 		set -- ${=rel}
 		git -C $S checkout -q -b $1 $2
 		echo lic > $S/LICENSE; git -C $S add LICENSE; git -C $S commit -qm "license $1"
 	done
 	git -C $S checkout -q main
 	git -C $S push -q oss main 7.0.x
-	git -C $S push -q commercial 'refs/heads/disclosure/*' 'refs/heads/release/*'
+	git -C $S push -q commercial 'refs/heads/embargoed/*' 'refs/heads/release/*'
 	git clone -q -o oss $R/oss.git $W 2>/dev/null
 	git -C $W remote add commercial $R/commercial.git
 	git -C $W fetch -q commercial
 	git -C $W branch -q --track 7.0.x oss/7.0.x
 	for g in 7.0.x main; do
 		for role in frozen active; do
-			git -C $W branch -q --track disclosure/$role/$g commercial/disclosure/$role/$g
+			git -C $W branch -q --track embargoed/$role/$g commercial/embargoed/$role/$g
 		done
 	done
 	git -C $W checkout -q 7.0.x
@@ -96,7 +96,7 @@ t() {
 # ---------------------------------------------------------------------------
 t "args: no args, single branch, unknown option, duplicates, --releases is gone" '
 	run; expect_rc 1
-	run main; expect_rc 1; expect_out "single branch needs --disclosures"
+	run main; expect_rc 1; expect_out "single branch needs --embargoed"
 	run -x a b; expect_rc 1; expect_out "Unknown option"
 	run a a; expect_rc 1; expect_out "more than once"
 	run --releases 7.0.1; expect_rc 1; expect_out "Unknown option"
@@ -143,15 +143,15 @@ t "local and remote together, the error counts both" '
 	expect_out "2 of 2 check\(s\) not merged \(local, remote\)"
 '
 
-t "disclosures" '
-	run -d 7.0.x main; expect_rc 0
-	expect_out "\\(4\\) disclosure/frozen/7.0.x -> disclosure/frozen/main +merged"
-	run -R -d 7.0.x main; expect_rc 0
-	commit_on $W disclosure/frozen/7.0.x fz.txt
-	git -C $W push -q commercial disclosure/frozen/7.0.x
-	run -R -d 7.0.x main; expect_rc 1
-	expect_out "commercial/disclosure/frozen/7.0.x -> commercial/disclosure/frozen/main +NOT MERGED, 1 commit"
-	expect_out "git log --oneline commercial/disclosure/frozen/main..commercial/disclosure/frozen/7.0.x"
+t "embargoed branches" '
+	run -e 7.0.x main; expect_rc 0
+	expect_out "\\(4\\) embargoed/frozen/7.0.x -> embargoed/frozen/main +merged"
+	run -R -e 7.0.x main; expect_rc 0
+	commit_on $W embargoed/frozen/7.0.x fz.txt
+	git -C $W push -q commercial embargoed/frozen/7.0.x
+	run -R -e 7.0.x main; expect_rc 1
+	expect_out "commercial/embargoed/frozen/7.0.x -> commercial/embargoed/frozen/main +NOT MERGED, 1 commit"
+	expect_out "git log --oneline commercial/embargoed/frozen/main..commercial/embargoed/frozen/7.0.x"
 '
 
 t "problems are reported together (missing branch, missing upstream)" '

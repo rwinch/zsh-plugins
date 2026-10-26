@@ -1,11 +1,11 @@
 = git-branches-fetch
 
-A zsh plugin that fetches the remotes behind several branches and reports how each branch compares to its upstream, with `--disclosures` support like link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
+A zsh plugin that fetches the remotes behind several branches and reports how each branch compares to its upstream, with `--embargoed` support like link:../pull[git-branches-pull] and link:../reset-to-upstream[git-branches-reset-to-upstream].
 
 == Features
 
 * `git branches-fetch 7.0.x main` fetches each branch's upstream remote (once per remote, with `--prune`), then prints whether each branch is up to date, behind, ahead, diverged or gone
-* `--disclosures` also reports `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
+* `--embargoed` also reports `embargoed/frozen/<generation>` and `embargoed/active/<generation>`
 * Never changes a local branch, worktree or file, so dirty worktrees are fine
 * A diverged branch or an upstream that is gone is reported, not an error
 * Branches are validated first (exists locally, has an upstream) and all problems are reported together before anything is fetched
@@ -27,21 +27,21 @@ To fill in the branches, use the `svaob` alias of link:../../spring-versions[spr
 gbbf $(svaob)
 ----
 
-The alias function `gbbfa` runs that, adds `--disclosures` unless you give `--no-disclosures`, and passes any extra options on, for example `gbbfa --no-disclosures`.
+The alias function `gbbfa` runs that, adds `--embargoed` unless you give `--no-embargoed`, and passes any extra options on, for example `gbbfa --no-embargoed`.
 
 == Usage
 
 [source,bash]
 ----
 git branches-fetch [OPTIONS] BRANCH [BRANCH ...]
-git branches-fetch [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git branches-fetch [OPTIONS] --embargoed GENERATION [GENERATION ...]
 ----
 
 |===
 |Option |Description
 
-|`--disclosures`, `-d`
-|Arguments are OSS generations. Each is reported with its disclosure frozen and active branches. `--disclosure` is accepted too.
+|`--embargoed`, `-e`
+|Arguments are OSS generations. Each is reported with its embargoed frozen and active branches.
 
 |`--help`, `-h`
 |Show help.
@@ -57,11 +57,11 @@ Fetching 'oss'...
 
 Fetched (upstream state after fetch):
   7.0.x                        oss/7.0.x                        behind 3
-  disclosure/frozen/7.0.x      oss/disclosure/frozen/7.0.x      up to date
-  disclosure/active/7.0.x      oss/disclosure/active/7.0.x      behind 1
+  embargoed/frozen/7.0.x      oss/embargoed/frozen/7.0.x      up to date
+  embargoed/active/7.0.x      oss/embargoed/active/7.0.x      behind 1
   main                         origin/main                      ahead 2
-  disclosure/frozen/main       oss/disclosure/frozen/main       up to date
-  disclosure/active/main       oss/disclosure/active/main       diverged (2 local, 5 upstream)
+  embargoed/frozen/main       oss/embargoed/frozen/main       up to date
+  embargoed/active/main       oss/embargoed/active/main       diverged (2 local, 5 upstream)
 
 Fetched 2 remote(s), 6 branch(es): 2 behind, 1 ahead, 1 diverged, 2 up to date.
 ----

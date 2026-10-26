@@ -5,7 +5,7 @@ dry_run=0                # --dry-run
 undo=0                   # --undo
 force_undo=0             # --force-undo
 done_word="reset"        # reset | undone, for the problem report
-disclosures=0            # --disclosures
+embargoed=0              # --embargoed
 typeset -a args          # positional args, in order
 
 typeset -a wt_branches   # parallel array: branch name at index i
@@ -30,7 +30,7 @@ nl=$'\n'
 usage() {
 	cat <<EOF
 Usage: git-branches-reset-to-upstream [OPTIONS] BRANCH1 [BRANCH2 ...]
-       git-branches-reset-to-upstream [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-branches-reset-to-upstream [OPTIONS] --embargoed GENERATION [GENERATION ...]
        git-branches-reset-to-upstream --undo [OPTIONS] (same arguments)
 
 Hard reset every given branch to its remote tracked (upstream) branch as of the
@@ -52,14 +52,14 @@ OPTIONS:
                        reset in its reflog is skipped. Takes the same arguments.
   --force-undo         Like --undo, but also restore branches that have moved since
                        the reset, discarding the commits made since.
-  --disclosures, -d    The arguments are OSS generation branches (7.0.x 7.1.x main).
-                       Each is reset together with disclosure/frozen/<generation>
-                       and disclosure/active/<generation>.
+  --embargoed, -e      The arguments are OSS generation branches (7.0.x 7.1.x main).
+                       Each is reset together with embargoed/frozen/<generation>
+                       and embargoed/active/<generation>.
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-reset-to-upstream 7.0.x main
-  git-branches-reset-to-upstream --dry-run --disclosures 7.0.x 7.1.x main
+  git-branches-reset-to-upstream --dry-run --embargoed 7.0.x 7.1.x main
   git-branches-reset-to-upstream --undo --dry-run 7.0.x main   # what would restoring the last reset do
   git-branches-reset-to-upstream --undo 7.0.x main
   git-branches-reset-to-upstream \$(svaob)   # the OSS branches
@@ -303,7 +303,7 @@ while [[ $# -gt 0 ]]; do
 		--dry-run|-n) dry_run=1; shift ;;
 		--undo|-u) undo=1; shift ;;
 		--force-undo) undo=1; force_undo=1; shift ;;
-		--disclosures|--disclosure|-d) disclosures=1; shift ;;
+		--embargoed|-e) embargoed=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) args+=("$1"); shift ;;
@@ -340,9 +340,9 @@ build_worktree_map
 
 for b in "${args[@]}"; do
 	add_branch "$b"
-	if [[ $disclosures -eq 1 ]]; then
-		add_branch "disclosure/frozen/$b"
-		add_branch "disclosure/active/$b"
+	if [[ $embargoed -eq 1 ]]; then
+		add_branch "embargoed/frozen/$b"
+		add_branch "embargoed/active/$b"
 	fi
 done
 

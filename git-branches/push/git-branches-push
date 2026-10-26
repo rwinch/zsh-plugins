@@ -2,7 +2,7 @@
 
 # ---- options ----
 dry_run=0                # --dry-run
-disclosures=0            # --disclosures
+embargoed=0              # --embargoed
 typeset -a branches      # positional args, in order
 
 # ---- the branches taking part ----
@@ -23,7 +23,7 @@ nl=$'\n'
 usage() {
 	cat <<EOF
 Usage: git-branches-push [OPTIONS] BRANCH [BRANCH ...]
-       git-branches-push [OPTIONS] --disclosures GENERATION [GENERATION ...]
+       git-branches-push [OPTIONS] --embargoed GENERATION [GENERATION ...]
 
 Pushes the branches that are ahead of their upstream, one 'git push --atomic' per
 remote.
@@ -35,14 +35,14 @@ fetched or pulled: run git-branches-fetch and git-branches-pull first.
 
 OPTIONS:
   --dry-run, -n        Validate and print what would be pushed. Nothing is pushed.
-  --disclosures, -d    The arguments are OSS generation branches. Each is pushed with
-                       its disclosure/frozen/<generation> and
-                       disclosure/active/<generation> branches.
+  --embargoed, -e      The arguments are OSS generation branches. Each is pushed with
+                       its embargoed/frozen/<generation> and
+                       embargoed/active/<generation> branches.
   --help, -h           Display this help message
 
 EXAMPLES:
   git-branches-push 7.0.x main
-  git-branches-push --dry-run --disclosures 7.0.x 7.1.x main
+  git-branches-push --dry-run --embargoed 7.0.x 7.1.x main
   git-branches-push \$(svaob)
 
 REQUIREMENTS:
@@ -111,7 +111,7 @@ add_branch() {
 
 build_branches() {
 	local b
-	if [[ $disclosures -eq 0 ]]; then
+	if [[ $embargoed -eq 0 ]]; then
 		for b in "${branches[@]}"; do
 			add_branch "$b"
 		done
@@ -119,8 +119,8 @@ build_branches() {
 	fi
 	for b in "${branches[@]}"; do
 		add_branch "$b"
-		add_branch "disclosure/frozen/$b"
-		add_branch "disclosure/active/$b"
+		add_branch "embargoed/frozen/$b"
+		add_branch "embargoed/active/$b"
 	done
 }
 
@@ -254,7 +254,7 @@ push_all() {
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--dry-run|-n) dry_run=1; shift ;;
-		--disclosures|--disclosure|-d) disclosures=1; shift ;;
+		--embargoed|-e) embargoed=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		-*) usage_error "Unknown option: $1" ;;
 		*) branches+=("$1"); shift ;;
@@ -267,8 +267,8 @@ done
 if [[ ${#branches[@]} -eq 0 ]]; then
 	usage_error "At least one branch is required"
 fi
-if [[ $disclosures -eq 1 && ${#branches[@]} -eq 0 ]]; then
-	usage_error "--disclosures needs at least one generation branch"
+if [[ $embargoed -eq 1 && ${#branches[@]} -eq 0 ]]; then
+	usage_error "--embargoed needs at least one generation branch"
 fi
 
 typeset -A seen_arg

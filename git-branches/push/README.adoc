@@ -1,12 +1,12 @@
 = git-branches-push
 
-A zsh plugin that pushes several branches in one go, with `--disclosures` support like link:../pull[git-branches-pull] and link:../merge-forward[git-branches-merge-forward]. It is the one plugin of the group that pushes, and it only does so after everything has been validated.
+A zsh plugin that pushes several branches in one go, with `--embargoed` support like link:../pull[git-branches-pull] and link:../merge-forward[git-branches-merge-forward]. It is the one plugin of the group that pushes, and it only does so after everything has been validated.
 
 == Features
 
 * `git branches-push 7.0.x main` pushes every branch that is ahead of its upstream
 * One `git push --atomic` per remote (an atomic push cannot span remotes), so a remote gets all of its branches or none
-* `--disclosures` also pushes `disclosure/frozen/<generation>` and `disclosure/active/<generation>`
+* `--embargoed` also pushes `embargoed/frozen/<generation>` and `embargoed/active/<generation>`
 * Never fetches or pulls: it compares against the state of the last fetch
 * Branches that already match their upstream are skipped, and when nothing is left it says so and exits 0
 * `--dry-run` validates and prints the plan and the push commands, and pushes nothing
@@ -33,7 +33,7 @@ gbbph $(svaob)
 [source,bash]
 ----
 git branches-push [OPTIONS] BRANCH [BRANCH ...]
-git branches-push [OPTIONS] --disclosures GENERATION [GENERATION ...]
+git branches-push [OPTIONS] --embargoed GENERATION [GENERATION ...]
 ----
 
 |===
@@ -42,8 +42,8 @@ git branches-push [OPTIONS] --disclosures GENERATION [GENERATION ...]
 |`--dry-run`, `-n`
 |Validate and print the plan and the push commands. Nothing is pushed.
 
-|`--disclosures`, `-d`
-|Arguments are OSS generations. Each is pushed with its disclosure frozen and active branches. `--disclosure` is accepted too.
+|`--embargoed`, `-e`
+|Arguments are OSS generations. Each is pushed with its embargoed frozen and active branches.
 
 |`--help`, `-h`
 |Show help.

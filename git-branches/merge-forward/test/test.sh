@@ -17,7 +17,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_EDITOR=true
 
 # ---- fixture ----
 # $R root, $S seed repo, $W work clone. Branches: 7.0.x main (oss);
-# disclosure/{frozen,active}/{7.0.x,main} (commercial).
+# embargoed/{frozen,active}/{7.0.x,main} (commercial).
 setup() {
 	R=$(mktemp -d); R=${R:A}
 	S=$R/seed; W=$R/work
@@ -30,18 +30,18 @@ setup() {
 	git -C $S branch 7.0.x
 	local g role
 	for g in 7.0.x main; do
-		for role in frozen active; do git -C $S branch disclosure/$role/$g $g; done
+		for role in frozen active; do git -C $S branch embargoed/$role/$g $g; done
 	done
 	git -C $S checkout -q main
 	git -C $S push -q oss main 7.0.x
-	git -C $S push -q commercial 'refs/heads/disclosure/*'
+	git -C $S push -q commercial 'refs/heads/embargoed/*'
 	git clone -q -o oss $R/oss.git $W 2>/dev/null
 	git -C $W remote add commercial $R/commercial.git
 	git -C $W fetch -q commercial
 	git -C $W branch -q --track 7.0.x oss/7.0.x
 	for g in 7.0.x main; do
 		for role in frozen active; do
-			git -C $W branch -q --track disclosure/$role/$g commercial/disclosure/$role/$g
+			git -C $W branch -q --track embargoed/$role/$g commercial/embargoed/$role/$g
 		done
 	done
 	git -C $W checkout -q 7.0.x
@@ -91,7 +91,7 @@ t() {
 # ---------------------------------------------------------------------------
 t "args: no args, single branch, unknown option, duplicates" '
 	run; expect_rc 1
-	run main; expect_rc 1; expect_out "single branch needs --disclosures"
+	run main; expect_rc 1; expect_out "single branch needs --embargoed"
 	run -x a b; expect_rc 1; expect_out "Unknown option"
 	run a a; expect_rc 1; expect_out "more than once"
 '
@@ -190,27 +190,27 @@ t "dry run changes nothing and exits 0" '
 	[[ $(branch_of $W) == 7.0.x ]]
 '
 
-t "disclosures: 2 generations give the 7 hops of the tutorial" '
+t "embargoed: 2 generations give the 7 hops of the tutorial" '
 	commit_on $W 7.0.x fix.txt
-	run -n -d 7.0.x main; expect_rc 0
-	expect_out "\(7\) disclosure/active/7.0.x -> disclosure/active/main"
-	expect_out "\(2\) 7.0.x +-> disclosure/frozen/7.0.x +down"
-	expect_out "\(4\) disclosure/frozen/7.0.x +-> disclosure/frozen/main +across"
+	run -n -e 7.0.x main; expect_rc 0
+	expect_out "\(7\) embargoed/active/7.0.x -> embargoed/active/main"
+	expect_out "\(2\) 7.0.x +-> embargoed/frozen/7.0.x +down"
+	expect_out "\(4\) embargoed/frozen/7.0.x +-> embargoed/frozen/main +across"
 	reject_out "\(8\)"
 '
 
-t "disclosures: a single generation is allowed" '
+t "embargoed: a single generation is allowed" '
 	commit_on $W main fix.txt
-	run -n -d main; expect_rc 0
-	expect_out "main +-> disclosure/frozen/main +down"
-	expect_out "disclosure/frozen/main +-> disclosure/active/main +down"
+	run -n -e main; expect_rc 0
+	expect_out "main +-> embargoed/frozen/main +down"
+	expect_out "embargoed/frozen/main +-> embargoed/active/main +down"
 	reject_out "\(3\)"
 '
 
-t "disclosures: merges real changes everywhere, prints one push per remote" '
+t "embargoed: merges real changes everywhere, prints one push per remote" '
 	commit_on $W 7.0.x fix.txt
-	run -d 7.0.x main; expect_rc 0
-	for b in main disclosure/frozen/7.0.x disclosure/frozen/main disclosure/active/7.0.x disclosure/active/main; do
+	run -e 7.0.x main; expect_rc 0
+	for b in main embargoed/frozen/7.0.x embargoed/frozen/main embargoed/active/7.0.x embargoed/active/main; do
 		has_file $b fix.txt || { echo "    $b lacks fix.txt"; return 1 }
 	done
 	expect_out "git push --atomic oss"
@@ -226,27 +226,27 @@ t "ours: across hops carry nothing, message is merge(ours)" '
 	[[ $(git -C $W rev-list --parents -1 main | wc -w) -eq 3 ]]
 '
 
-t "ours + disclosures: ours across, real merges down" '
+t "ours + embargoed: ours across, real merges down" '
 	commit_on $W 7.0.x deps.txt
-	run -o -d 7.0.x main; expect_rc 0
+	run -o -e 7.0.x main; expect_rc 0
 	lacks_file main deps.txt
-	has_file disclosure/frozen/7.0.x deps.txt
-	has_file disclosure/active/7.0.x deps.txt
-	lacks_file disclosure/frozen/main deps.txt
-	lacks_file disclosure/active/main deps.txt
-	contains disclosure/frozen/7.0.x disclosure/active/main
-	contains disclosure/active/7.0.x disclosure/active/main
-	[[ "$(git -C $W log -1 --format=%s disclosure/active/main)" == "merge(ours): 7.0.x into main" ]]
+	has_file embargoed/frozen/7.0.x deps.txt
+	has_file embargoed/active/7.0.x deps.txt
+	lacks_file embargoed/frozen/main deps.txt
+	lacks_file embargoed/active/main deps.txt
+	contains embargoed/frozen/7.0.x embargoed/active/main
+	contains embargoed/active/7.0.x embargoed/active/main
+	[[ "$(git -C $W log -1 --format=%s embargoed/active/main)" == "merge(ours): 7.0.x into main" ]]
 '
 
-t "disclosures: merge messages name generation branches" '
+t "embargoed: merge messages name generation branches" '
 	commit_on $W 7.0.x fix.txt
-	commit_on $W disclosure/frozen/7.0.x own.txt
-	commit_on $W disclosure/active/7.0.x own2.txt
-	run --allow-ahead -o -d 7.0.x main; expect_rc 0
-	[[ "$(git -C $W log -1 --format=%s disclosure/frozen/7.0.x)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
-	[[ "$(git -C $W log -1 --format=%s disclosure/active/7.0.x)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
-	[[ "$(git -C $W log -1 --format=%s disclosure/frozen/main)" == "merge(ours): 7.0.x into main" ]]
+	commit_on $W embargoed/frozen/7.0.x own.txt
+	commit_on $W embargoed/active/7.0.x own2.txt
+	run --allow-ahead -o -e 7.0.x main; expect_rc 0
+	[[ "$(git -C $W log -1 --format=%s embargoed/frozen/7.0.x)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
+	[[ "$(git -C $W log -1 --format=%s embargoed/active/7.0.x)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
+	[[ "$(git -C $W log -1 --format=%s embargoed/frozen/main)" == "merge(ours): 7.0.x into main" ]]
 '
 
 # A conflict stops at the prompt; resolve it from "another terminal" and press Enter.
