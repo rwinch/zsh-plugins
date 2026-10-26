@@ -8,7 +8,7 @@ This plugin provides a command to automatically create git worktrees for all mat
 
 == Features
 
-* Takes the branches to process as shell globs or literal branch names (e.g., `main`, `release/*`, `[0-9]*.[0-9]*.x`, `disclosure/*`)
+* Takes the branches to process as shell globs or literal branch names (e.g., `main`, `release/*`, `[0-9]*.[0-9]*.x`, `embargoed/*`)
 * `gwwca` runs the usual patterns against the `commercial` and `oss` remotes
 * Creates worktrees in the parent directory (`../branch-name`), also when run from a worktree of a slashed branch such as `release/1.0` or from a subdirectory
 * Automatically creates local tracking branches if they don't exist
@@ -31,7 +31,7 @@ Or manually by adding the plugin directory to your `PATH`.
 
 The plugin also defines the alias `gwwc` for `git-worktrees-create`, and the function `gwwca`, which runs it twice, commercial first:
 
-. `--remote commercial` with `[0-9]*.[0-9]*.x`, `disclosure/*` and `release/*` (skipped with a message if that remote does not exist)
+. `--remote commercial` with `[0-9]*.[0-9]*.x`, `embargoed/*` and `release/*` (skipped with a message if that remote does not exist)
 . `--remote oss` with `[0-9]*.[0-9]*.x`, `main` and `docs-build`
 
 Commercial runs first, so a `.x` branch that exists on both remotes comes from commercial and the oss run skips it, because its worktree exists. `gwwca` accepts `--oss-remote REMOTE` and `--commercial-remote REMOTE` to use other remote names, and `--dry-run`, which is passed to both runs.
@@ -41,7 +41,7 @@ Commercial runs first, so a `.x` branch that exists on both remotes comes from c
 git-worktrees-create --remote REMOTE [OPTIONS] PATTERN [PATTERN ...]
 ----
 
-Quote globs so the shell does not expand them. `*` also matches `/`, so `disclosure/*` covers `disclosure/CVE-2025-1234/5.8.x`. At least one pattern is required.
+Quote globs so the shell does not expand them. `*` also matches `/`, so `embargoed/*` covers `embargoed/CVE-2025-1234/5.8.x`. At least one pattern is required.
 
 === Options
 
@@ -59,7 +59,7 @@ Quote globs so the shell does not expand them. `*` also matches `/`, so `disclos
 git-worktrees-create --remote oss 'release/*' main
 
 # Use 'upstream' as remote
-git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'disclosure/*'
+git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'embargoed/*'
 
 # Worktree for docs-build of the commercial remote, as commercial-docs-build
 git-worktrees-create --remote commercial --name-prefix commercial- docs-build

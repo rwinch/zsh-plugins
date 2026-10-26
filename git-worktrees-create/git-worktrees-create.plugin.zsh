@@ -18,7 +18,7 @@ gwwca() {
 		esac
 	done
 	local rc=0 rc2=0
-	git-worktrees-create --remote $commercial --skip-missing-remote $dry '[0-9]*.[0-9]*.x' 'disclosure/*' 'release/*' || rc=$?
+	git-worktrees-create --remote $commercial --skip-missing-remote $dry '[0-9]*.[0-9]*.x' 'embargoed/*' 'release/*' || rc=$?
 	git-worktrees-create --remote $oss $dry '[0-9]*.[0-9]*.x' main docs-build || rc2=$?
 	return $(( rc != 0 ? rc : rc2 ))
 }

@@ -38,10 +38,10 @@ BEHAVIOR:
 
 EXAMPLES:
   git-worktrees-create --remote oss 'release/*' main
-  git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'disclosure/*'
+  git-worktrees-create --remote upstream '[0-9]*.[0-9]*.x' 'embargoed/*'
   git-worktrees-create --remote commercial --name-prefix commercial- docs-build
 
-The gwwca function runs the usual patterns for you: [0-9]*.[0-9]*.x, disclosure/*
+The gwwca function runs the usual patterns for you: [0-9]*.[0-9]*.x, embargoed/*
 and release/* from the commercial remote, then [0-9]*.[0-9]*.x, main and
 docs-build from the oss remote.
 
