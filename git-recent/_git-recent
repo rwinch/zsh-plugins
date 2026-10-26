@@ -1,0 +1,5 @@
+#compdef git-recent
+
+_arguments -s \
+	'-n+[show only the most recent COUNT branches]:count:' \
+	'*:: :_nothing'
