@@ -1,0 +1,27 @@
+#compdef git-branches-embargoed-create gbbec gbbeca
+
+_git-branches-embargoed-create-remotes() {
+	local -a remotes
+	remotes=(${(f)"$(git remote 2>/dev/null)"})
+	_describe -t remotes 'remote' remotes
+}
+
+# Generations are the branches of the OSS remote (default oss)
+_git-branches-embargoed-create-generations() {
+	local remote=${opt_args[--oss-remote]:-oss}
+	local -a gens
+	gens=(${(f)"$(git for-each-ref --format='%(refname:strip=3)' "refs/remotes/$remote/" 2>/dev/null)"})
+	gens=(${gens:#HEAD})
+	if (( ${#gens} )); then
+		_describe -t generations 'generation' gens
+	else
+		__git_branch_names
+	fi
+}
+
+_arguments -s \
+	'--oss-remote=[the OSS remote (default oss)]:remote:_git-branches-embargoed-create-remotes' \
+	'--commercial-remote=[the commercial remote (default commercial)]:remote:_git-branches-embargoed-create-remotes' \
+	'(-n --dry-run)'{-n,--dry-run}'[validate and print the plan, create nothing]' \
+	'(- *)'{-h,--help}'[display help message]' \
+	'*:generation:_git-branches-embargoed-create-generations'
