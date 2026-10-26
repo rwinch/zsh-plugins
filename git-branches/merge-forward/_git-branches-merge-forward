@@ -1,5 +1,12 @@
 #compdef git-branches-merge-forward gbbmf gbbmfa
 
+# Complete local branch names (git's own __git_branch_names is only available once _git has been loaded)
+_zp_branches() {
+	local -a branches
+	branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
+	_wanted branches expl 'branch' compadd -a branches
+}
+
 local -a opts
 opts=(
 	'(-n --dry-run)'{-n,--dry-run}'[validate and print what would happen, change nothing]'
@@ -16,4 +23,4 @@ if [[ $service == gbbmfa ]]; then
 fi
 
 _arguments -s $opts \
-	'*:branch:__git_branch_names'
+	'*:branch:_zp_branches'

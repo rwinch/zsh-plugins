@@ -1,5 +1,12 @@
 #compdef git-worktree-switch gws
 
+# Complete local branch names (git's own __git_branch_names is only available once _git has been loaded)
+_zp_branches() {
+	local -a branches
+	branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
+	_wanted branches expl 'branch' compadd -a branches
+}
+
 _git-worktree-switch() {
 	local curcontext="$curcontext" state line ret=1
 	typeset -A opt_args
@@ -14,10 +21,10 @@ _git-worktree-switch() {
 		arg)
 			if (( ${+opt_args[-c]} || ${+opt_args[-C]} )); then
 				_alternative \
-					'branches:start point (branch):__git_branch_names' \
+					'branches:start point (branch):_zp_branches' \
 					'commits:start point (commit or tag):__git_commit_tags' && ret=0
 			else
-				__git_branch_names && ret=0
+				_zp_branches && ret=0
 			fi
 			;;
 	esac

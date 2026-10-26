@@ -1,5 +1,12 @@
 #compdef git-branches-fetch gbbf gbbfa
 
+# Complete local branch names (git's own __git_branch_names is only available once _git has been loaded)
+_zp_branches() {
+	local -a branches
+	branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
+	_wanted branches expl 'branch' compadd -a branches
+}
+
 # gbbfa fills in the OSS branches and --embargoed itself, so it also takes --no-embargoed
 local -a opts
 opts=(
@@ -9,4 +16,4 @@ opts=(
 [[ $service == gbbfa ]] && opts+=('--no-embargoed[leave the embargoed branches out]')
 
 _arguments -s $opts \
-	'*:branch:__git_branch_names'
+	'*:branch:_zp_branches'

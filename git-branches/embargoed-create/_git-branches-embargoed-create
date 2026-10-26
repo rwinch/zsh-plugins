@@ -1,5 +1,12 @@
 #compdef git-branches-embargoed-create gbbec gbbeca
 
+# Complete local branch names (git's own __git_branch_names is only available once _git has been loaded)
+_zp_branches() {
+	local -a branches
+	branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
+	_wanted branches expl 'branch' compadd -a branches
+}
+
 _git-branches-embargoed-create-remotes() {
 	local -a remotes
 	remotes=(${(f)"$(git remote 2>/dev/null)"})
@@ -15,7 +22,7 @@ _git-branches-embargoed-create-generations() {
 	if (( ${#gens} )); then
 		_describe -t generations 'generation' gens
 	else
-		__git_branch_names
+		_zp_branches
 	fi
 }
 

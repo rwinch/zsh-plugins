@@ -1,5 +1,12 @@
 #compdef gmo BRANCH
 
+# Complete local branch names (git's own __git_branch_names is only available once _git has been loaded)
+_zp_branches() {
+	local -a branches
+	branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
+	_wanted branches expl 'branch' compadd -a branches
+}
+
 _arguments -s \
 	'(- *)'{-h,--help}'[display help message]' \
-	'1:branch:__git_branch_names'
+	'1:branch:_zp_branches'

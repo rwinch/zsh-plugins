@@ -1,8 +1,15 @@
 #compdef git-branches-check-merged gbbcm gbbcma
 
+# Complete local branch names (git's own __git_branch_names is only available once _git has been loaded)
+_zp_branches() {
+	local -a branches
+	branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
+	_wanted branches expl 'branch' compadd -a branches
+}
+
 _git_branches_check_merged_branches() {
-	if (( $+functions[__git_branch_names] )); then
-		__git_branch_names
+	if (( $+functions[_zp_branches] )); then
+		_zp_branches
 	else
 		local -a names
 		names=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
