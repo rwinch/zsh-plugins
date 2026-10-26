@@ -1,0 +1,13 @@
+#compdef git-branches-push gbbph gbbpha
+
+local -a opts
+opts=(
+	'(-n --dry-run)'{-n,--dry-run}'[validate and print what would be pushed, push nothing]'
+	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generations, also push their embargoed branches]'
+	'(- *)'{-h,--help}'[display help message]'
+)
+# gbbpha already passes --embargoed, and adds --no-embargoed to leave it out
+[[ $service == gbbpha ]] && opts+=('--no-embargoed[leave the embargoed branches out]')
+
+_arguments -s $opts \
+	'*:branch:__git_branch_names'
