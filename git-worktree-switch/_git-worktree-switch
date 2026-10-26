@@ -1,0 +1,28 @@
+#compdef git-worktree-switch gws
+
+_git-worktree-switch() {
+	local curcontext="$curcontext" state line ret=1
+	typeset -A opt_args
+
+	_arguments -s -C \
+		'(-c -C -h --help)-c[create <new-branch> and a worktree for it]:new branch: ' \
+		'(-c -C -h --help)-C[create or reset <new-branch> and a worktree for it]:new branch: ' \
+		'(- *)'{-h,--help}'[show this help message]' \
+		'1: :->arg' && ret=0
+
+	case $state in
+		arg)
+			if (( ${+opt_args[-c]} || ${+opt_args[-C]} )); then
+				_alternative \
+					'branches:start point (branch):__git_branch_names' \
+					'commits:start point (commit or tag):__git_commit_tags' && ret=0
+			else
+				__git_branch_names && ret=0
+			fi
+			;;
+	esac
+
+	return ret
+}
+
+_git-worktree-switch "$@"
