@@ -1,0 +1,67 @@
+#compdef gh-milestones ghm
+
+_gh-milestones() {
+	local -a common list_opts
+	local sub=list
+
+	common=(
+		'--oss-repo[OSS repository]:repository (ORG/NAME):'
+		'--commercial-repo[commercial repository]:repository (ORG/NAME):'
+		'(-h --help)'{-h,--help}'[show this help message]'
+	)
+
+	list_opts=(
+		'--state[milestones to select]:state:(open closed all)'
+		'*--due[select by due date glob (UTC YYYY-MM-DD)]:glob:'
+		'--this-month[select milestones due this month]'
+		'--next-month[select milestones due next month]'
+		'(--commercial-only)--oss-only[only OSS milestones]'
+		'(--oss-only)--commercial-only[only commercial milestones]'
+		'--hotfixes[only commercial milestones with 4 part titles]'
+		'--oneline[print the unique titles separated by commas on one line]'
+		'(-q --quiet)'{-q,--quiet}'[do not print repositories or the no-match message]'
+	)
+
+	if (( CURRENT == 2 )) && [[ $words[2] != -* ]]; then
+		local -a subcmds
+		subcmds=(
+			'list:list milestones from both repositories (default)'
+			'create:create milestones'
+			'set-due-date:set the due date on milestones with the given titles'
+		)
+		_describe -t commands 'gh-milestones command' subcmds
+		return
+	fi
+
+	case $words[2] in
+		list|create|set-due-date) sub=$words[2] ;;
+	esac
+
+	case $sub in
+		list)
+			_arguments -s -S \
+				$common $list_opts \
+				'1::command:(list)'
+			;;
+		create)
+			_arguments -s -S \
+				$common \
+				'*--due[due date for all created milestones]:date (YYYY-MM-DD):' \
+				'(-n --dry-run)'{-n,--dry-run}'[validate and print the gh commands without running them]' \
+				'*--oss[titles to create in the OSS repository]:*milestone title:' \
+				'*--commercial[titles to create in the commercial repository]:*milestone title:'
+			;;
+		set-due-date)
+			if (( CURRENT == 3 )) && [[ $words[3] != -* ]]; then
+				_message 'due date (YYYY-MM-DD)'
+				return
+			fi
+			_arguments -s -S \
+				$common \
+				'(-n --dry-run)'{-n,--dry-run}'[validate and print the gh commands without running them]' \
+				'*:milestone title:'
+			;;
+	esac
+}
+
+_gh-milestones "$@"
