@@ -1,0 +1,44 @@
+#compdef gmi
+
+# Load git's completion helpers (__git_branch_names, ...) if not yet available
+(( $+functions[__git_branch_names] )) || _git >/dev/null 2>&1
+
+_gmi_commit() {
+	if (( $+functions[__git_recent_commits] )); then
+		_alternative \
+			'recent-commits:recent commit:__git_recent_commits' \
+			'heads:branch or tag:_gmi_refs'
+	else
+		_gmi_refs
+	fi
+}
+
+_gmi_refs() {
+	local -a refs
+	refs=(${(f)"$(command git for-each-ref --format='%(refname:short)' refs/heads refs/remotes refs/tags 2>/dev/null)"})
+	_describe -t refs 'ref' refs
+}
+
+_gmi_branch() {
+	if (( $+functions[__git_branch_names] )); then
+		_alternative \
+			'local-branches:local branch:__git_branch_names' \
+			'remote-refs:remote ref:_gmi_remote_refs'
+	else
+		_gmi_refs
+	fi
+}
+
+_gmi_remote_refs() {
+	local -a refs
+	refs=(${(f)"$(command git for-each-ref --format='%(refname:short)' refs/remotes 2>/dev/null)"})
+	refs=(${refs:#*/HEAD})
+	_describe -t remote-refs 'remote branch (e.g. origin/7.1.x)' refs
+}
+
+_arguments -s \
+	'(-n --dry-run)'{-n,--dry-run}'[print the git commands that would be used, without running them]' \
+	'(-f --full)'{-f,--full}'[show the full diff of the merge instead of the --stat summary]' \
+	'(- *)'{-h,--help}'[display usage]' \
+	'1:COMMIT (sha, tag, branch, ...):_gmi_commit' \
+	'2:BRANCH (e.g. 7.1.x or origin/7.1.x):_gmi_branch'
