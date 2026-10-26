@@ -70,8 +70,10 @@ t "merged one level deep" '
 	g checkout -q main; mk own; mg fix M1
 	run X main; expect_rc 0
 	expect_hop M1
-	expect_out "^main +[0-9a-f]+  [0-9-]+  M1"
-	reject_out "regular commit|ours|edited"
+	expect_out "^\\* $(g rev-parse --short X)  "
+	expect_out "^main  \\* $(g rev-parse --short X)  "
+	expect_out "^      +$(g rev-parse --short M1)  "
+	reject_out "ours|edited"
 '
 
 t "merged two levels deep: a into b, b into main lists both merges, inner first" '
@@ -110,7 +112,8 @@ t "regular commit on the branch own first-parent line" '
 	g checkout -q -b side; mk S
 	g checkout -q main; mg side M1
 	run X main; expect_rc 0
-	expect_out "^main +regular commit"
+	expect_out "^main +\\* $(g rev-parse --short X)  "
+	reject_out "^ +[0-9a-f]{7,}  "
 	reject_hop M1
 '
 
@@ -118,7 +121,8 @@ t "a merge commit that is itself on the first-parent line is a regular commit" '
 	g checkout -q -b fix; mk F
 	g checkout -q main; mk own; mg fix M1; mk after
 	run M1 main; expect_rc 0
-	expect_out "^main +regular commit"
+	expect_out "^main +\\* $(g rev-parse --short M1)  "
+	reject_out "^ +[0-9a-f]{7,}  "
 '
 
 t "merged with ours is flagged" '

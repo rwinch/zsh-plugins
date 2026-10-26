@@ -32,7 +32,7 @@ BEHAVIOR:
   - Output is never paged (git --no-pager).
   - Each git command is echoed to stderr as '\$ ...' before it runs.
   - A branch where COMMIT is on its own first-parent history shows
-    'regular commit'. Otherwise the merges are listed from the one that
+    only the commit (marked with '*'). Otherwise the merges are listed from the one that
     brought COMMIT into the first branch up to the one on BRANCH, even when
     COMMIT reached BRANCH through merges of merges.
   - 'ours' marks a merge whose diff against its first parent touches none of
@@ -81,7 +81,7 @@ git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/ori
 git merge-base --is-ancestor <commit> <branch>
 git rev-list --first-parent <branch> | grep -qxF <commit>   # a match means a regular commit on <branch>
 git rev-list --topo-order --reverse --ancestry-path <commit>..<tip> | grep -F -x -f <(git rev-list --first-parent <commit>..<tip>) | head -1   # the merge; repeated on its parent that contains <commit>
-git --no-pager log -1 --format='%h  %as  %s' <commit>
+git --no-pager log -1 --format='%h  %as  %s' <commit>   # shown with a '*' to the left of the sha
 git --no-pager log -1 --format='%h  %as  %s' <merge>
 git diff-tree --no-commit-id --name-only -r <commit>   # files the commit touched
 git diff --quiet <merge>^1 <merge> -- <files>          # ours: nothing changed
@@ -254,22 +254,20 @@ for name in $branches; do
 done
 
 # ---- report ----
+# The original commit is marked with '*' to the left of its sha, and the other shas are indented to line up
+commitline=$(run git --no-pager log -1 --format='%h  %as  %s' "$commit")
 print -r -- ""
-run git --no-pager log -1 --format='%h  %as  %s' "$commit"
+print -r -- "* $commitline"
 print -r -- ""
 
 width=0
 for name in ${(k)result}; do (( $#name > width )) && width=$#name; done
 for name in $branches; do
 	(( $+result[$name] )) || continue
-	if [[ ${result[$name]} == regular ]]; then
-		print -r -- "${(r:$width:)name}  regular commit"
-		continue
-	fi
-	label=$name
+	print -r -- "${(r:$width:)name}  * $commitline"
+	[[ ${result[$name]} == regular ]] && continue
 	for m in ${(f)result[$name]}; do
-		print -r -- "${(r:$width:)label}  ${hopline[$m]}${hopflag[$m]:+   ${hopflag[$m]}}"
-		label=""
+		print -r -- "${(r:$width:)}    ${hopline[$m]}${hopflag[$m]:+   ${hopflag[$m]}}"
 	done
 done
 
