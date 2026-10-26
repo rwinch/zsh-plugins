@@ -1,13 +1,14 @@
 = gmi
 
-A zsh plugin that shows how a commit got into a branch: the original commit, every branch that contains it, the merge commit that brought it in, and the diff that merge produced (or a note that the merge used `ours`).
+A zsh plugin that shows how a commit got into each branch you care about: a regular commit on the branch, or the chain of merges that carried it there (fixed on `a`, merged into `b`, merged into `main`), with merges done with `ours` or edited by hand flagged.
 
 == Features
 
-* Shows the original commit (`git log -1 --stat`)
-* Lists every local and remote branch that contains the commit (`git branch --all --contains`)
-* Finds the merge on the branch's first-parent history that first contained the commit, and shows it
-* Shows a `--stat` summary of the merge's diff against its first parent (the full patch with `--full`), limited to the files the commit touched. If that diff is empty it says the merge was done with `ours`
+* Checks several branches at once. By default these are the branches named `main`, `*.x` and `embargoed/(frozen|active)/(main|*.x)`, local or on `origin` (a local branch wins over the `origin/` one)
+* Per branch, says `regular commit` when the commit is on the branch's own first-parent history, otherwise lists every merge on the way, innermost first. This includes commits that reached the branch through merges of merges
+* Flags `ours` on a merge whose diff against its first parent touches none of the files the commit touched
+* Flags `edited` on a merge that differs from what git's automatic merge produces (conflict resolutions or hand edits, uses `git show --remerge-diff`, needs git 2.36+) and shows that diff at the end
+* Groups the branches that do not contain the commit on one `not in:` line
 * Echoes every git command to stderr as `$ ...` before running it
 * `--dry-run` prints the commands without running them and without a `$` prefix, so they can be copied
 
@@ -26,33 +27,55 @@ Or manually by adding the plugin directory to your `PATH`.
 
 [source,bash]
 ----
-gmi [--dry-run] COMMIT BRANCH
+gmi [--dry-run] [--full] COMMIT [BRANCH...]
 ----
+
+`BRANCH` is an exact ref (`7.1.x`, `origin/7.1.x`) or a glob (`'7.*.x'`). Giving any replaces the default set.
 
 === Options
 
 * `--dry-run`, `-n`: print the git commands that would be used, without running them
-* `--full`, `-f`: show the full diff of the merge instead of the `--stat` summary
+* `--full`, `-f`: show the full patch of edited merges instead of the `--stat` summary
 * `--help`, `-h`: display usage
 
 === Examples
 
 [source,bash]
 ----
-gmi 3f2a9c1 7.1.x
-gmi --dry-run 3f2a9c1 origin/7.1.x
-gmi --full 3f2a9c1 7.1.x
+gmi 3f2a9c1
+gmi 3f2a9c1 7.1.x main
+gmi --dry-run 3f2a9c1 '7.*.x'
 ----
 
-=== Results
+=== Output
 
-* Merged normally: the merge commit log and the diff the merge applied for the commit's files
-* `Merged ours: ...`: the merge changed none of the commit's files (or nothing at all)
-* `No merge: ...`: the commit is part of the branch's own history, with no merge
-* `Not merged: ...`: the commit is not an ancestor of the branch
+[source]
+----
+3f2a9c1  2026-03-02  fix NPE
+
+6.0.x  regular commit
+7.1.x  8d41e07  2026-03-04  Merge branch 'a' into 7.1.x   edited
+main   8d41e07  2026-03-04  Merge branch 'a' into 7.1.x   edited
+       e19b7d3  2026-03-09  Merge branch '7.1.x' into main   ours: the merge changed none of the commit's files
+
+not in: 7.0.x
+----
+
+Git does not record which branch a merge landed on, so the merge subject is shown as is.
+
+=== Undoing a merge
+
+To put a branch back to how it was before a merge `M`, use `git reset --hard M^` (the merge's first parent).
 
 === Exit status
 
-* 0: the commit is in the branch
-* 1: the commit is not in the branch
+* 0: the commit is in at least one branch checked
+* 1: the commit is in none of them
 * 2: usage error or not a git repository
+
+== Tests
+
+[source,bash]
+----
+test/test.sh [name-filter]
+----

@@ -43,7 +43,7 @@ _gmi_remote_refs() {
 
 _arguments -s \
 	'(-n --dry-run)'{-n,--dry-run}'[print the git commands that would be used, without running them]' \
-	'(-f --full)'{-f,--full}'[show the full diff of the merge instead of the --stat summary]' \
+	'(-f --full)'{-f,--full}'[show the full patch of edited merges instead of the --stat summary]' \
 	'(- *)'{-h,--help}'[display usage]' \
 	'1:COMMIT (sha, tag, branch, ...):_gmi_commit' \
-	'2:BRANCH (e.g. 7.1.x or origin/7.1.x):_gmi_branch'
+	'*:BRANCH (e.g. 7.1.x or origin/7.1.x):_gmi_branch'

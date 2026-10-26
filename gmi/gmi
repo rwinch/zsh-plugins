@@ -3,38 +3,50 @@
 # Named 'gmi' ("git merge info") to sit next to 'gmo' ("git merge ours") and
 # invoked as a bare command rather than a 'git <subcommand>'.
 
+setopt extendedglob
+
+# Branches checked when none are given: main, *.x and embargoed/(frozen|active)/(main|*.x)
+default_pat='(main|[^/]##.x|embargoed/(frozen|active)/(main|[^/]##.x))'
+
 usage() {
 	cat <<EOT
-Usage: gmi [--dry-run] [--full] COMMIT BRANCH
+Usage: gmi [--dry-run] [--full] COMMIT [BRANCH...]
 
-Show how COMMIT got into BRANCH: the original commit, the merge commit that
-brought it in, the diff that merge produced (or a note that the merge was
-done with 'ours'), and every branch (local and remote) that contains COMMIT.
+Show how COMMIT got into each BRANCH: a regular commit on the branch, or the
+chain of merges that carried it there (fixed on a, merged into b, merged into
+main, ...), flagging merges done with 'ours' and merges that were edited.
 
 ARGUMENTS:
   COMMIT   Commit ref (sha, tag, branch, ...) (required)
-  BRANCH   Branch ref to look for the merge in, e.g. 7.1.x or origin/7.1.x (required)
+  BRANCH   Branch to check, as an exact ref (7.1.x, origin/7.1.x) or a glob
+           ('7.*.x'). Defaults to the branches named main, *.x and
+           embargoed/(frozen|active)/(main|*.x), local or on origin.
 
 OPTIONS:
   --dry-run, -n   Print the git commands that would be used, without running
                   them and without a '\$' prefix so they can be copied
-  --full, -f      Show the full diff of the merge instead of the --stat summary
+  --full, -f      Show the full patch of edited merges instead of --stat
   --help, -h      Display this help message
 
 BEHAVIOR:
-  - Lists the branches containing COMMIT with 'git branch --all --contains'.
   - Output is never paged (git --no-pager).
   - Each git command is echoed to stderr as '\$ ...' before it runs.
-  - The merge is the oldest commit on BRANCH's first-parent history that
-    contains COMMIT. If it is a merge, its diff against its first parent is
-    shown as a --stat summary (or the full patch with --full), limited to
-    the files COMMIT touched. An empty diff means the merge
-    was done with 'ours'.
-  - Exit status: 0 if COMMIT is in BRANCH, 1 if it is not, 2 for usage errors.
+  - A branch where COMMIT is on its own first-parent history shows
+    'regular commit'. Otherwise the merges are listed from the one that
+    brought COMMIT into the first branch up to the one on BRANCH, even when
+    COMMIT reached BRANCH through merges of merges.
+  - 'ours' marks a merge whose diff against its first parent touches none of
+    the files COMMIT touched. 'edited' marks a merge that differs from what
+    git's automatic merge produces (conflict resolutions or hand edits, needs
+    git 2.36+); its diff is shown at the end.
+  - To undo a merge M on a branch, use 'git reset --hard M^'.
+  - Exit status: 0 if COMMIT is in at least one branch, 1 if in none,
+    2 for usage errors.
 
 EXAMPLES:
-  gmi 3f2a9c1 7.1.x
-  gmi --dry-run 3f2a9c1 origin/7.1.x
+  gmi 3f2a9c1
+  gmi 3f2a9c1 7.1.x main
+  gmi --dry-run 3f2a9c1 '7.*.x'
 
 REQUIREMENTS:
   - Must be run from within a git repository
@@ -55,15 +67,8 @@ for arg in "$@"; do
 	esac
 done
 
-if (( $#args < 2 )); then
-	echo "Error: COMMIT and BRANCH are required" >&2
-	echo "" >&2
-	usage >&2
-	exit 2
-fi
-
-if (( $#args > 2 )); then
-	echo "Error: Too many arguments" >&2
+if (( $#args < 1 )); then
+	echo "Error: COMMIT is required" >&2
 	echo "" >&2
 	usage >&2
 	exit 2
@@ -72,15 +77,16 @@ fi
 if $dry_run; then
 	cat <<EOT
 git rev-parse --verify ${(q-)args[1]}^{commit}
-git rev-parse --verify ${(q-)args[2]}^{commit}
+git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin   # the branches to check
 git merge-base --is-ancestor <commit> <branch>
-git rev-list --first-parent --ancestry-path --reverse <commit>..<branch>   # first line is the merge
-git --no-pager log -1 --stat <commit>
-git --no-pager branch --all --contains <commit>
-git --no-pager log -1 <merge>
+git rev-list --first-parent <branch> | grep -qxF <commit>   # a match means a regular commit on <branch>
+git rev-list --topo-order --reverse --ancestry-path <commit>..<tip> | grep -F -x -f <(git rev-list --first-parent <commit>..<tip>) | head -1   # the merge; repeated on its parent that contains <commit>
+git --no-pager log -1 --format='%h  %as  %s' <commit>
+git --no-pager log -1 --format='%h  %as  %s' <merge>
 git diff-tree --no-commit-id --name-only -r <commit>   # files the commit touched
-git diff --quiet <merge>^1 <merge> -- <files>          # empty means ours
-git --no-pager diff $($full || echo '--stat ')<merge>^1 <merge> -- <files>
+git diff --quiet <merge>^1 <merge> -- <files>          # ours: nothing changed
+git show --remerge-diff --format= <merge>              # edited: not empty
+git --no-pager show --remerge-diff --format= $($full || echo '--stat ')<merge>
 EOT
 	exit 0
 fi
@@ -90,8 +96,8 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
 	exit 2
 fi
 
-color=()
 dim='' reset=''
+color=()
 if [[ -t 1 ]]; then
 	color=(-c color.ui=always)
 fi
@@ -99,9 +105,14 @@ if [[ -t 2 ]]; then
 	dim=$'\e[2m' reset=$'\e[0m'
 fi
 
+# Echo the command to stderr
+echo_cmd() {
+	print -r -u2 -- "${dim}\$ ${(j: :)${(@q-)argv}}${reset}"
+}
+
 # Echo the command to stderr, then run it
 run() {
-	print -r -u2 -- "${dim}\$ ${(j: :)${(@q-)argv}}${reset}"
+	echo_cmd "$@"
 	command "$@"
 }
 
@@ -110,55 +121,172 @@ git_run() {
 	run git --no-pager "${color[@]}" -c core.quotePath=false "$@"
 }
 
-heading() {
-	print -r -- ""
-	print -r -- "== $1 =="
-}
-
 commit=$(run git rev-parse --verify "${args[1]}^{commit}") || { echo "Error: Not a commit: ${args[1]}" >&2; exit 2; }
-branch=$(run git rev-parse --verify "${args[2]}^{commit}") || { echo "Error: Not a commit: ${args[2]}" >&2; exit 2; }
-short=$(git rev-parse --short "$commit")
-branch_name=${args[2]}
 
-if ! run git merge-base --is-ancestor "$commit" "$branch"; then
-	heading "Merged into $branch_name by"
-	echo "Not merged: $short is not an ancestor of $branch_name."
-	exit 1
-fi
+# ---- the branches to check ----
+typeset -A tip mname   # branch name -> commit sha, branch name -> name without the origin/ prefix
+refs=("${(@f)$(run git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin)}")
+for line in "${(@)refs}"; do
+	[[ $line == refs/heads/* ]] || continue
+	name=${${line% *}#refs/heads/}
+	tip[$name]=${line##* } mname[$name]=$name
+done
+for line in "${(@)refs}"; do
+	[[ $line == refs/remotes/origin/* ]] || continue
+	name=${${line% *}#refs/remotes/}
+	[[ $name == origin/HEAD ]] && continue
+	(( $+tip[${name#origin/}] )) && continue   # the local branch wins
+	tip[$name]=${line##* } mname[$name]=${name#origin/}
+done
 
-merge=$(run git rev-list --first-parent --ancestry-path --reverse "$commit..$branch" | head -1)
-
-heading "Commit"
-git_run log -1 --stat "$commit"
-
-heading "Branches containing the commit"
-git_run branch --all --contains "$commit"
-
-heading "Merged into $branch_name by"
-if [[ -z "$merge" ]] || (( $(git rev-list --parents -n 1 "$merge" | wc -w) < 3 )); then
-	echo "No merge: $short is part of $branch_name's own history."
-	exit 0
-fi
-git_run log -1 "$merge"
-
-files=("${(@f)$(run git -c core.quotePath=false diff-tree --no-commit-id --name-only -r "$commit")}")
-files=("${(@)files:#}")
-if (( $#files )); then
-	heading "Merge diff (files changed by the commit)"
-	pathspec=(-- "${files[@]}")
-else
-	heading "Merge diff"
-	pathspec=()
-fi
-
-if run git diff --quiet "$merge^1" "$merge" "${pathspec[@]}"; then
-	if (( $#files )) && ! run git diff --quiet "$merge^1" "$merge"; then
-		echo "Merged ours: the merge changed none of the files touched by $short."
-	else
-		echo "Merged ours: the merge produced no changes."
+typeset -A selected
+if (( $#args == 1 )); then
+	for name in ${(k)tip}; do
+		[[ ${mname[$name]} == ${~default_pat} ]] && selected[$name]=${tip[$name]}
+	done
+	if (( ! $#selected )); then
+		echo "Error: No branches named main, *.x or embargoed/(frozen|active)/(main|*.x); name the branches to check" >&2
+		exit 2
 	fi
 else
+	for arg in "${(@)args[2,-1]}"; do
+		if (( $+tip[$arg] )); then
+			selected[$arg]=${tip[$arg]}
+		elif sha=$(run git rev-parse --verify "$arg^{commit}" 2>/dev/null); then
+			selected[$arg]=$sha
+		else
+			matched=false
+			for name in ${(k)tip}; do
+				if [[ $name == ${~arg} || ${mname[$name]} == ${~arg} ]]; then
+					selected[$name]=${tip[$name]} matched=true
+				fi
+			done
+			$matched || { echo "Error: No branch matches: $arg" >&2; exit 2; }
+		fi
+	done
+fi
+branches=(${(ko)selected})
+
+# ---- how the commit reached a branch ----
+files=("${(@f)$(run git -c core.quotePath=false diff-tree --no-commit-id --name-only -r "$commit")}")
+files=("${(@)files:#}")
+pathspec=()
+(( $#files )) && pathspec=(-- "${files[@]}")
+
+# Is $2 on $1's own first-parent history?
+on_first_parent() {
+	run git rev-list --first-parent "$1" | grep -qxF "$2"
+}
+
+# The oldest commit on $1's first-parent history that contains $commit. Comparing against the
+# first-parent history (rather than using --first-parent with --ancestry-path) also finds the
+# merge when the commit reached the branch through merges of merges.
+first_merge() {
+	run git rev-list --topo-order --reverse --ancestry-path "$commit..$1" \
+		| grep -F -x -f <(run git rev-list --first-parent "$commit..$1") | head -1
+}
+
+typeset -A hopline hopflag edited   # merge sha -> its line, its flag; merge shas that were edited
+remerge=true
+
+describe_hop() {
+	local m=$1 out rc
+	(( $+hopline[$m] )) && return
+	hopline[$m]=$(run git --no-pager log -1 --format='%h  %as  %s' "$m")
+	hopflag[$m]=""
+	if run git diff --quiet "$m^1" "$m" "${pathspec[@]}"; then
+		if (( $#files )); then
+			hopflag[$m]="ours: the merge changed none of the commit's files"
+		else
+			hopflag[$m]="ours: the merge produced no changes"
+		fi
+	elif $remerge; then
+		echo_cmd git show --remerge-diff --format= "$m"
+		out=$(command git show --remerge-diff --format= "$m" 2>/dev/null); rc=$?
+		if (( rc == 129 )); then
+			remerge=false
+			echo "Note: git show --remerge-diff needs git 2.36+, so edited merges are not flagged" >&2
+		elif [[ -n $out ]]; then
+			hopflag[$m]="edited"
+			edited[$m]=1
+		fi
+	fi
+}
+
+# Prints the merges that carried $commit into $1, innermost first. Empty for a regular commit.
+chain() {
+	local t=$1 m p
+	local -a hops
+	while ! on_first_parent "$t" "$commit"; do
+		m=$(first_merge "$t")
+		if [[ -z $m ]]; then
+			echo "Error: Could not find the merge on $1's first-parent history that brought in the commit" >&2
+			exit 2
+		fi
+		hops=("$m" "${hops[@]}")
+		t=""
+		for p in ${(f)"$(run git rev-parse "$m^@")"}; do
+			[[ $p == $(git rev-parse "$m^1") ]] && continue
+			if git merge-base --is-ancestor "$commit" "$p"; then t=$p; break; fi
+		done
+		if [[ -z $t ]]; then
+			echo "Error: Could not find the parent of $m that contains the commit" >&2
+			exit 2
+		fi
+	done
+	print -rl -- "${hops[@]}"
+}
+
+typeset -A result   # branch -> 'regular' or the merges, one per line
+absent=()
+for name in $branches; do
+	if ! run git merge-base --is-ancestor "$commit" "${selected[$name]}"; then
+		absent+=("$name")
+		continue
+	fi
+	hops=$(chain "${selected[$name]}") || exit $?
+	if [[ -z $hops ]]; then
+		result[$name]=regular
+	else
+		for m in ${(f)hops}; do describe_hop "$m"; done
+		result[$name]=$hops
+	fi
+done
+
+# ---- report ----
+print -r -- ""
+run git --no-pager log -1 --format='%h  %as  %s' "$commit"
+print -r -- ""
+
+width=0
+for name in ${(k)result}; do (( $#name > width )) && width=$#name; done
+for name in $branches; do
+	(( $+result[$name] )) || continue
+	if [[ ${result[$name]} == regular ]]; then
+		print -r -- "${(r:$width:)name}  regular commit"
+		continue
+	fi
+	label=$name
+	for m in ${(f)result[$name]}; do
+		print -r -- "${(r:$width:)label}  ${hopline[$m]}${hopflag[$m]:+   ${hopflag[$m]}}"
+		label=""
+	done
+done
+
+if (( $#absent )); then
+	print -r -- ""
+	print -r -- "not in: ${(j:, :)absent}"
+fi
+
+if (( $#edited )); then
 	stat=(--stat)
 	$full && stat=()
-	git_run diff "${stat[@]}" "$merge^1" "$merge" "${pathspec[@]}"
+	for m in ${(k)edited}; do
+		print -r -- ""
+		print -r -- "== edited merge $(git rev-parse --short "$m") (what differs from git's automatic merge) =="
+		git_run show --remerge-diff --format= "${stat[@]}" "$m"
+	done
 fi
+
+(( $#result )) || exit 1
+exit 0
