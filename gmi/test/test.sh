@@ -160,6 +160,42 @@ t "a clean merge is not flagged" '
 	reject_out "edited|ours"
 '
 
+t "--limit 1 shows only the merge that brought the commit into the branch" '
+	g checkout -q -b a; mk X
+	g checkout -q -b b main; mk bown; mg a MB
+	g checkout -q main; mk own; mg b MM
+	run -l 1 X main; expect_rc 0
+	expect_hop MM; reject_hop MB
+	expect_out "^main  \\* $(g rev-parse --short X)  "
+	expect_out "^ +\\.\\.\\.$"
+	run -l 0 X main; expect_rc 0
+	expect_hop MM; reject_hop MB
+	reject_out "\\.\\.\\."
+	expect_out "^main +$(g rev-parse --short MM)  "
+	reject_out "^main +\\* "
+	g branch 1.x X
+	run -l 0 X main 1.x; expect_rc 0
+	expect_out "^1.x +\\* $(g rev-parse --short X)  "
+	run --limit 2 X main; expect_rc 0
+	expect_hop MM; expect_hop MB
+	reject_out "\\.\\.\\."
+	run --limit=5 X main; expect_rc 0
+	reject_out "\\.\\.\\."
+'
+
+t "--limit only checks the merges shown for ours" '
+	g checkout -q -b a; mk X
+	g checkout -q -b b main; mk bown; mours a MB
+	g checkout -q main; mk own; mg b MM
+	run -l 1 X main; expect_rc 0
+	reject_hop MB
+'
+
+t "--limit errors" '
+	run -l X main; expect_rc 2; expect_err "needs a number"
+	run X main -l; expect_rc 2; expect_err "needs a number"
+'
+
 t "not in any branch: exit 1" '
 	g checkout -q -b side; mk X
 	g checkout -q main

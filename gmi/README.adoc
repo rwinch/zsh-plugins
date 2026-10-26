@@ -27,7 +27,7 @@ Or manually by adding the plugin directory to your `PATH`.
 
 [source,bash]
 ----
-gmi [--dry-run] [--full] COMMIT [BRANCH...]
+gmi [--dry-run] [--full] [--limit N] COMMIT [BRANCH...]
 ----
 
 `BRANCH` is an exact ref (`7.1.x`, `origin/7.1.x`) or a glob (`'7.*.x'`). Giving any replaces the default set.
@@ -36,6 +36,7 @@ gmi [--dry-run] [--full] COMMIT [BRANCH...]
 
 * `--dry-run`, `-n`: print the git commands that would be used, without running them
 * `--full`, `-f`: show the full patch of edited merges instead of the `--stat` summary
+* `--limit N`, `-l N`: show only the last N merges per branch (the ones nearest the branch), with a `...` line where merges are hidden. `-l 1` shows just the merge that brought the commit into the branch, and `-l 0` shows only that merge (no original commit line, no `...`), or just the original commit on a branch where there is no merge
 * `--help`, `-h`: display usage
 
 === Examples
@@ -44,6 +45,7 @@ gmi [--dry-run] [--full] COMMIT [BRANCH...]
 ----
 gmi 3f2a9c1
 gmi 3f2a9c1 7.1.x main
+gmi -l 1 3f2a9c1
 gmi --dry-run 3f2a9c1 '7.*.x'
 ----
 

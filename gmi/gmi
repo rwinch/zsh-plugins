@@ -10,7 +10,7 @@ default_pat='(main|[^/]##.x|embargoed/(frozen|active)/(main|[^/]##.x))'
 
 usage() {
 	cat <<EOT
-Usage: gmi [--dry-run] [--full] COMMIT [BRANCH...]
+Usage: gmi [--dry-run] [--full] [--limit N] COMMIT [BRANCH...]
 
 Show how COMMIT got into each BRANCH: a regular commit on the branch, or the
 chain of merges that carried it there (fixed on a, merged into b, merged into
@@ -26,6 +26,10 @@ OPTIONS:
   --dry-run, -n   Print the git commands that would be used, without running
                   them and without a '\$' prefix so they can be copied
   --full, -f      Show the full patch of edited merges instead of --stat
+  --limit, -l N   Show only the last N merges per branch (the ones nearest the
+                  branch), with '...' where merges are hidden. -l 1 shows just
+                  the merge that brought COMMIT into the branch. -l 0 shows only that
+                  merge, or just COMMIT where there is no merge
   --help, -h      Display this help message
 
 BEHAVIOR:
@@ -57,15 +61,25 @@ EOT
 dry_run=false
 full=false
 args=()
-for arg in "$@"; do
+limit=''
+while (( $# )); do
+	arg=$1; shift
 	case "$arg" in
 		--help|-h) usage; exit 0 ;;
 		--dry-run|-n) dry_run=true ;;
 		--full|-f) full=true ;;
+		--limit|-l)
+			(( $# )) || { echo "Error: $arg needs a number" >&2; exit 2; }
+			limit=$1; shift ;;
+		--limit=*) limit=${arg#--limit=} ;;
 		-*) echo "Error: Unknown option: $arg" >&2; echo "" >&2; usage >&2; exit 2 ;;
 		*) args+=("$arg") ;;
 	esac
 done
+if [[ -n $limit && $limit != <-> ]]; then
+	echo "Error: --limit needs a number: $limit" >&2
+	exit 2
+fi
 
 if (( $#args < 1 )); then
 	echo "Error: COMMIT is required" >&2
@@ -237,7 +251,7 @@ chain() {
 	print -rl -- "${hops[@]}"
 }
 
-typeset -A result   # branch -> 'regular' or the merges, one per line
+typeset -A result cut   # branch -> 'regular' or the merges shown, one per line; branches with hidden merges
 absent=()
 for name in $branches; do
 	if ! run git merge-base --is-ancestor "$commit" "${selected[$name]}"; then
@@ -248,8 +262,14 @@ for name in $branches; do
 	if [[ -z $hops ]]; then
 		result[$name]=regular
 	else
-		for m in ${(f)hops}; do describe_hop "$m"; done
-		result[$name]=$hops
+		shown=(${(f)hops})
+		# -l 0 is -l 1 without the '...'
+		if [[ -n $limit ]] && (( $#shown > (limit > 0 ? limit : 1) )); then
+			shown=("${(@)shown[-(limit > 0 ? limit : 1),-1]}")
+			(( limit > 0 )) && cut[$name]=1
+		fi
+		for m in $shown; do describe_hop "$m"; done
+		result[$name]=${(F)shown}
 	fi
 done
 
@@ -264,10 +284,17 @@ width=0
 for name in ${(k)result}; do (( $#name > width )) && width=$#name; done
 for name in $branches; do
 	(( $+result[$name] )) || continue
-	print -r -- "${(r:$width:)name}  * $commitline"
+	label=$name
+	# -l 0 leaves out the original commit unless it is a regular commit on the branch
+	if [[ $limit != 0 || ${result[$name]} == regular ]]; then
+		print -r -- "${(r:$width:)label}  * $commitline"
+		label=""
+	fi
 	[[ ${result[$name]} == regular ]] && continue
+	(( $+cut[$name] )) && print -r -- "${(r:$width:)}    ..."
 	for m in ${(f)result[$name]}; do
-		print -r -- "${(r:$width:)}    ${hopline[$m]}${hopflag[$m]:+   ${hopflag[$m]}}"
+		print -r -- "${(r:$width:)label}    ${hopline[$m]}${hopflag[$m]:+   ${hopflag[$m]}}"
+		label=""
 	done
 done
 
