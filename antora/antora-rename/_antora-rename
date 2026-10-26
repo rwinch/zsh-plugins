@@ -1,0 +1,4 @@
+#compdef antora-rename
+
+_arguments -s \
+	"1:BASE_DIR (Antora pages directory):_files -/"
