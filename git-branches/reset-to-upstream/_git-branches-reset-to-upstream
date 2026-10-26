@@ -1,0 +1,21 @@
+#compdef git-branches-reset-to-upstream gbbrtu gbbrtua
+
+# gbbrtua supplies the OSS branches itself and adds --no-embargoed, so only
+# offer branch names for the other commands.
+local -a opts
+opts=(
+	'(-n --dry-run)'{-n,--dry-run}'[validate and print what would happen, change nothing]'
+	'(-u --undo --force-undo)'{-u,--undo}'[move each branch back to where it was before its last reset]'
+	'(-u --undo --force-undo)--force-undo[like --undo, also restoring branches that have moved since]'
+	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generations, also reset their embargoed branches]'
+	'(-h --help)'{-h,--help}'[show help message]'
+)
+
+if [[ $service == gbbrtua ]]; then
+	_arguments -s $opts \
+		'--no-embargoed[leave the embargoed branches out]' \
+		'*:branch:__git_branch_names'
+else
+	_arguments -s $opts \
+		'*:branch:__git_branch_names'
+fi
