@@ -1,0 +1,7 @@
+#compdef git-branches-pull gbbpl gbbpla
+
+_arguments -s -S \
+	'(-n --dry-run)'{-n,--dry-run}'[fetch, validate and print what would happen, pull nothing]' \
+	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generations, also pull their embargoed branches]' \
+	'(-h --help)'{-h,--help}'[display help message]' \
+	'*:branch:__git_branch_names'
