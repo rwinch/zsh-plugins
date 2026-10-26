@@ -1,0 +1,33 @@
+#compdef git-worktrees-create gwwc gwwca
+
+_git-worktrees-create-remotes() {
+	local -a remotes
+	remotes=(${(f)"$(git remote 2>/dev/null)"})
+	_describe -t remotes 'remote' remotes
+}
+
+# Branches of the remote given by --remote, as patterns
+_git-worktrees-create-patterns() {
+	local remote=${opt_args[--remote]}
+	local -a branches
+	if [[ -n $remote ]]; then
+		branches=(${${(f)"$(git for-each-ref --format='%(refname:short)' "refs/remotes/$remote" 2>/dev/null)"}#$remote/})
+		branches=(${branches:#HEAD})
+	fi
+	_describe -t branches 'remote branch or glob pattern (quote globs)' branches
+}
+
+if [[ $service == gwwca ]]; then
+	_arguments -s \
+		'--oss-remote[remote for the oss branches (default oss)]:remote:_git-worktrees-create-remotes' \
+		'--commercial-remote[remote for the commercial branches (default commercial)]:remote:_git-worktrees-create-remotes' \
+		'--dry-run[show what would be created without creating anything]'
+else
+	_arguments -s \
+		'--remote[remote to create worktrees from]:remote:_git-worktrees-create-remotes' \
+		'--name-prefix[prepend PREFIX to the local branch name and worktree directory]:prefix:' \
+		'--skip-missing-remote[if the remote does not exist, say so and exit 0]' \
+		'--dry-run[show what would be created without fetching or creating anything]' \
+		'--help[display help message]' \
+		'*:pattern:_git-worktrees-create-patterns'
+fi
