@@ -1,0 +1,12 @@
+#compdef git-branches-fetch gbbf gbbfa
+
+# gbbfa fills in the OSS branches and --embargoed itself, so it also takes --no-embargoed
+local -a opts
+opts=(
+	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generation branches, also report embargoed/frozen and embargoed/active]'
+	'(-h --help)'{-h,--help}'[display help message]'
+)
+[[ $service == gbbfa ]] && opts+=('--no-embargoed[leave the embargoed branches out]')
+
+_arguments -s $opts \
+	'*:branch:__git_branch_names'
