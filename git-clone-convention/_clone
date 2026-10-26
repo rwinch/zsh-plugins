@@ -1,0 +1,57 @@
+#compdef clone git-clone-convention
+
+# Complete OWNER/REPOSITORY from the clones already under ~/code/OWNER/REPOSITORY
+_clone_repos() {
+	local -a repos
+	repos=(${HOME}/code/*/*(N-/:s,${HOME}/code/,,))
+	_alternative \
+		'repos:OWNER/REPOSITORY:compadd -a repos' \
+		'urls:URL:_urls'
+}
+
+_arguments -s -S \
+	'(--https)--https[use HTTPS URLs instead of SSH]' \
+	'--dry-run[look everything up and print what would happen]' \
+	'(--gitlab --host)--host=[git host (default github.com)]:host:(github.com gitlab.com bitbucket.org)' \
+	'(--host --gitlab)--gitlab[shortcut for --host gitlab.com]' \
+	'(- *)'{-h,--help}'[display the help message]' \
+	'(-b --branch)'{-b+,--branch=}'[git clone: branch to check out]:branch:' \
+	'--depth=[git clone: create a shallow clone of this depth]:depth:' \
+	'--shallow-since=[git clone: shallow clone since a date]:date:' \
+	'--shallow-exclude=[git clone: shallow clone excluding a revision]:revision:' \
+	'--single-branch[git clone: clone only one branch]' \
+	'--no-single-branch[git clone: clone all branches]' \
+	'--no-tags[git clone: do not clone tags]' \
+	'--tags[git clone: clone tags]' \
+	'--recurse-submodules=-[git clone: initialize submodules]::pathspec:' \
+	'--shallow-submodules[git clone: shallow clone the submodules]' \
+	'--no-shallow-submodules[git clone: do not shallow clone the submodules]' \
+	'--remote-submodules[git clone: update submodules from their remote branch]' \
+	'(-j --jobs)'{-j+,--jobs=}'[git clone: number of submodules cloned in parallel]:jobs:' \
+	'--filter=[git clone: partial clone filter]:filter spec:(blob\:none blob\:limit= tree\:0)' \
+	'--sparse[git clone: use a sparse checkout]' \
+	'(-n --no-checkout)'{-n,--no-checkout}'[git clone: do not check out HEAD]' \
+	'--bare[git clone: make a bare repository]' \
+	'--mirror[git clone: make a mirror repository]' \
+	'(-l --local)'{-l,--local}'[git clone: use local clone optimizations]' \
+	'--no-hardlinks[git clone: copy files instead of hardlinking]' \
+	'(-s --shared)'{-s,--shared}'[git clone: set up shared repository]' \
+	'--reference=[git clone: reference repository]:repository:_directories' \
+	'--reference-if-able=[git clone: reference repository if it exists]:repository:_directories' \
+	'--dissociate[git clone: stop borrowing from reference repositories]' \
+	'--separate-git-dir=[git clone: place the git directory elsewhere]:git dir:_files -/' \
+	'--template=[git clone: template directory]:template directory:_files -/' \
+	'(-c --config)'{-c+,--config=}'[git clone: set a configuration variable]:key=value:' \
+	'(-u --upload-pack)'{-u+,--upload-pack=}'[git clone: path to git-upload-pack on the remote]:path:_files' \
+	'--server-option=[git clone: option to transmit to the server]:option:' \
+	'--bundle-uri=[git clone: fetch a bundle from this URI first]:uri:_urls' \
+	'--ref-format=[git clone: ref storage format]:format:(files reftable)' \
+	'--revision=[git clone: clone a given revision without a branch]:revision:' \
+	'(-v --verbose -q --quiet)'{-v,--verbose}'[git clone: be more verbose]' \
+	'(-q --quiet -v --verbose)'{-q,--quiet}'[git clone: be more quiet]' \
+	'--progress[git clone: force progress reporting]' \
+	'--also-filter-submodules[git clone: apply the partial clone filter to submodules]' \
+	'(-4 --ipv4 -6 --ipv6)'{-4,--ipv4}'[git clone: use IPv4 only]' \
+	'(-6 --ipv6 -4 --ipv4)'{-6,--ipv6}'[git clone: use IPv6 only]' \
+	'1:OWNER/REPOSITORY or URL:_clone_repos' \
+	'*: :' && return
