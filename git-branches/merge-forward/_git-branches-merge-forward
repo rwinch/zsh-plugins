@@ -1,0 +1,19 @@
+#compdef git-branches-merge-forward gbbmf gbbmfa
+
+local -a opts
+opts=(
+	'(-n --dry-run)'{-n,--dry-run}'[validate and print what would happen, change nothing]'
+	'(-a --allow-ahead)'{-a,--allow-ahead}'[let any branch in the chain be ahead of its upstream]'
+	'(-o --ours)'{-o,--ours}'[record across hops with git merge -s ours]'
+	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generation branches, also merge embargoed branches]'
+	'(-P --pause)'{-P,--pause}'[stop after each merge so the result can be validated]'
+	'(-h --help)'{-h,--help}'[show this help message]'
+)
+
+# gbbmfa fills in the OSS branches and --embargoed, and also takes --no-embargoed
+if [[ $service == gbbmfa ]]; then
+	opts+=('--no-embargoed[leave the embargoed branches out]')
+fi
+
+_arguments -s $opts \
+	'*:branch:__git_branch_names'
