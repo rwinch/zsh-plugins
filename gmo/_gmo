@@ -1,0 +1,5 @@
+#compdef gmo BRANCH
+
+_arguments -s \
+	'(- *)'{-h,--help}'[display help message]' \
+	'1:branch:__git_branch_names'
