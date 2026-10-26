@@ -1,0 +1,15 @@
+#compdef git-branches-release gbbr
+
+_git_branches_release_versions() {
+	local -a versions
+	versions=( ${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads/release refs/remotes 2>/dev/null \
+		| sed -n -e 's#^release/##p' -e 's#^[^/]*/release/##p' | sort -u)"} )
+	_describe -t versions 'release version' versions
+}
+
+_arguments -s \
+	'(-n --dry-run)'{-n,--dry-run}'[validate and print what would happen, change nothing]' \
+	'(-P --pause)'{-P,--pause}'[stop after each release so the result can be validated]' \
+	'(- *)'{-h,--help}'[display help message]' \
+	'1:command:(rebase)' \
+	'*:release version (comma separated):_git_branches_release_versions'
