@@ -28,6 +28,11 @@ if [[ "$1 $2" == "repo clone" ]]; then
 	git init -q $dir && git -C $dir remote add origin $FIX/${repo//\//_}.git
 	exit
 fi
+if [[ "$2" == repos/*/* && "$2" != repos/*/*/* && "$*" == *.archived* ]]; then
+	repo=${2#repos/}
+	[[ -e $FIX/archived_${repo//\//_} ]] && echo true || echo false
+	exit 0
+fi
 if [[ "$2" == repos/*/rules/branches/* ]]; then
 	repo=${${2#repos/}%%/rules*}
 	[[ -e $FIX/fail_${repo//\//_} ]] && { echo "gh: HTTP 500" >&2; exit 1 }
@@ -239,6 +244,34 @@ t "check: protected, not protected, unknown, exit status, read-only" '
 	run check --remove a/one; expect_rc 1; expect_out "not valid with check"
 	run check -n a/one; expect_rc 1; expect_out "not valid with check"
 	no_writes
+'
+
+t "archived: apply and remove skip them, the rest is applied, rc 0" '
+	touch $FIX/archived_a_old
+	run old new --owners a
+	expect_rc 0; expect_out "a/old +skip \(archived\)"; expect_out "a/new +create"
+	expect_out "Protected 1 repository"; expect_out "Skipped 1 archived"
+	called "api repos/a/new/rulesets --input -"
+	! grep -q "a/old" $CALLS
+	run old --owners a
+	expect_rc 0; expect_out "skip \(archived\)"; expect_out "Protected 0 repository"
+	echo 9 > $FIX/a_new.id
+	: > $CALLS
+	run --remove old new --owners a
+	expect_rc 0; expect_out "a/old +skip \(archived\)"; expect_out "remove \(ruleset 9\)"
+	! grep -q "a/old" $CALLS
+'
+
+t "archived: check does not count them, verify skips them without cloning" '
+	touch $FIX/archived_a_old
+	echo "creation,update" > $FIX/rules_a_new
+	run check old new --owners a
+	expect_rc 0; expect_out "a/old +skipped \(archived\)"; expect_out "a/new +protected"
+	bare a_new "$GH013"
+	run verify old new --owners a
+	expect_rc 0; expect_out "a/old +SKIPPED"; expect_out "a/new +BLOCKED"
+	expect_out "1 blocked, 0 failed, 0 error\\(s\\), 1 skipped"
+	[[ -z "$(ls -A $TMPDIR)" ]] || { echo "temp dirs left"; return 1 }
 '
 
 echo

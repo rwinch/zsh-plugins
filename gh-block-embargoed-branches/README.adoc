@@ -8,6 +8,7 @@ A zsh plugin that uses the `gh` CLI to block creating, pushing to and deleting b
 * Running it again updates the existing ruleset instead of adding a second one
 * Repositories are `OWNER/NAME`, or just `NAME` which is expanded with every owner in `--owners`
 * `--remove` deletes the ruleset
+* Archived repositories are read-only, so `apply`, `--remove`, `check` and `verify` skip them with a note instead of failing (`skip (archived)`, `skipped (archived)`, `SKIPPED`). They do not count as problems and do not change the exit status
 * `check` reads the rules that apply to `embargoed/active/main` and reports whether each repository is protected. It needs only read access and changes nothing
 * `verify` proves it works: it really tries to push `embargoed/active/main` to each repository and reports which pushes were blocked
 * `--dry-run` validates and prints the `gh` commands, and changes nothing
@@ -42,6 +43,21 @@ gh-block-embargoed-branches [apply|check|verify] [OPTIONS] REPO...
 `gh-block-embargoed-branches rwinch/foo repo1 repo2 --owners owner1,owner2` applies to `rwinch/foo`, `owner1/repo1`, `owner2/repo1`, `owner1/repo2` and `owner2/repo2`.
 
 With `@me`, `gh-block-embargoed-branches foo --owners spring-projects,@me` applies to `spring-projects/foo` and `<your login>/foo`.
+
+Typical use for a set of projects. The comment above each command says who runs it:
+
+[source,bash]
+----
+# Run by an admin of the spring-projects repositories (also protects their own forks)
+gh-block-embargoed-branches apply spring-authorization-server spring-ldap \
+  spring-security spring-security-kerberos spring-session \
+  --owners @me,spring-projects
+
+# Run by each developer to protect their own forks (@me is their gh login)
+gh-block-embargoed-branches apply spring-authorization-server spring-ldap \
+  spring-security spring-security-kerberos spring-session \
+  --owners @me
+----
 
 == Check
 

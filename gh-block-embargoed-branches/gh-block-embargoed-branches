@@ -18,7 +18,8 @@ by adding a repository ruleset (with no bypass actors) to each repository, using
 the gh CLI. Running it again updates the existing ruleset.
 
 COMMANDS:
-  apply     Add (or update) the ruleset in each repository (default)
+  apply     Add (or update) the ruleset in each repository (default). Archived
+            repositories are skipped with a note
   check     Read-only: report for each repository whether creating and pushing to
             embargoed/active/main are blocked by a repository rule (protected,
             NOT PROTECTED or unknown). Exits 0 if all are protected, 2 if any is
@@ -28,7 +29,7 @@ COMMANDS:
             containing only test.txt and try to push it. Reports BLOCKED (the
             push was rejected by a repository rule), FAILED (the push worked, so
             the branch now exists) or ERROR (inconclusive, e.g. clone or auth
-            problems). Prints a command to delete the branches that were created.
+            problems). Archived repositories are skipped. Prints a command to delete the branches that were created.
             Exits 0 only if every repository blocked the push. The temporary
             clones are always removed. A repository literally named 'verify'
             must be written OWNER/verify.
@@ -44,6 +45,16 @@ OPTIONS:
   --help, -h       Show this help
 
 EXAMPLES:
+  # Run by an admin of the spring-projects repositories (also protects their own forks)
+  gh-block-embargoed-branches apply spring-authorization-server spring-ldap \
+    spring-security spring-security-kerberos spring-session \
+    --owners @me,spring-projects
+
+  # Run by each developer to protect their own forks (@me is their gh login)
+  gh-block-embargoed-branches apply spring-authorization-server spring-ldap \
+    spring-security spring-security-kerberos spring-session \
+    --owners @me
+
   gh-block-embargoed-branches rwinch/foo repo1 repo2 --owners owner1,owner2 -n
     applies to rwinch/foo owner1/repo1 owner2/repo1 owner1/repo2 owner2/repo2
   gh-block-embargoed-branches foo --owners spring-projects,@me -n
@@ -136,6 +147,11 @@ done
 fail_if_problems
 repos=("${(@u)repos}")
 
+# Archived repositories are read-only, so every command skips them.
+is_archived() {
+	[[ $(gh api "repos/$1" --jq .archived 2>/dev/null) == true ]]
+}
+
 cmd_apply() {
 	# ---------------------------------------------------------------------------
 	# Ruleset
@@ -150,8 +166,10 @@ cmd_apply() {
 	}'
 
 	typeset -A ids
+	typeset -A archived
 	out=""
 	for r in "${repos[@]}"; do
+		is_archived $r && { archived[$r]=1; continue }
 		out=$(gh api --paginate "repos/$r/rulesets" \
 			--jq '.[] | select(.name == "'$ruleset_name'" and .source_type == "Repository") | .id' 2>&1) || {
 			problem "$r: could not read rulesets (admin access needed): ${out//$nl/ }"
@@ -171,6 +189,10 @@ cmd_apply() {
 	typeset -a cmds
 	act=""
 	for r in "${repos[@]}"; do
+		if (( ${+archived[$r]} )); then
+			printf "%-${w}s  %s\n" $r "skip (archived)"
+			continue
+		fi
 		id=${ids[$r]}
 		if (( remove )); then
 			if [[ -z "$id" ]]; then
@@ -209,8 +231,10 @@ cmd_apply() {
 	if (( remove )); then
 		echo "Removed the ruleset from $n repository(ies)."
 	else
-		echo "Protected ${#repos[@]} repository(ies): creating, pushing to and deleting embargoed/** branches is blocked."
+		echo "Protected $n repository(ies): creating, pushing to and deleting embargoed/** branches is blocked."
 	fi
+	(( ${#archived} )) && echo "Skipped ${#archived} archived repository(ies)."
+	return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -219,7 +243,7 @@ cmd_apply() {
 cmd_verify() {
 	local r rc res detail log w=4 c
 	local -a rows cleanup
-	local -i blocked=0 failed=0 errors=0
+	local -i blocked=0 failed=0 errors=0 skipped=0
 	if (( dry_run )); then
 		echo "Dry run, nothing was cloned or pushed. For each repository it would:"
 		echo "  clone, create orphan branch $verify_branch with test.txt, push it, remove the clone"
@@ -231,6 +255,12 @@ cmd_verify() {
 	for r in "${repos[@]}"; do
 		(( ${#r} > w )) && w=${#r}
 		echo "==> $r"
+		if is_archived $r; then
+			echo "archived, skipping"
+			skipped+=1
+			rows+=("$r"$'\t'"SKIPPED"$'\t'"archived, nothing to verify")
+			continue
+		fi
 		res=ERROR; detail=""
 		d=$(mktemp -d) || { echo "Error: could not create a temporary directory" >&2; return 1 }
 		log=$d/push.log
@@ -275,7 +305,7 @@ cmd_verify() {
 		printf "%-${w}s  %-7s  %s\n" "${f[1]}" "${f[2]}" "${f[3]}"
 	done
 	echo
-	echo "$blocked blocked, $failed failed, $errors error(s). Temporary clones removed."
+	echo "$blocked blocked, $failed failed, $errors error(s), $skipped skipped. Temporary clones removed."
 	if (( ${#cleanup[@]} )); then
 		echo
 		echo "To remove the accidentally created branches:"
@@ -291,6 +321,10 @@ cmd_check() {
 	local r out rc w=4 result=0
 	for r in "${repos[@]}"; do (( ${#r} > w )) && w=${#r}; done
 	for r in "${repos[@]}"; do
+		if is_archived $r; then
+			printf "%-${w}s  skipped (archived)\n" $r
+			continue
+		fi
 		out=$(gh api "repos/$r/rules/branches/$verify_branch" --jq '[.[].type] | join(",")' 2>&1); rc=$?
 		if (( rc != 0 )); then
 			printf "%-${w}s  unknown (%s)\n" $r "${out%%$nl*}"
