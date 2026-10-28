@@ -1,0 +1,312 @@
+#!/bin/zsh
+
+typeset -a owners positionals repos problems actions
+subcommand=apply
+dry_run=0   # --dry-run
+remove=0    # --remove
+ruleset_name=block-embargoed-branches
+nl=$'\n'
+cmd_name=gh-block-embargoed-branches
+verify_branch=embargoed/active/main
+
+usage() {
+	cat <<'USAGE'
+Usage: gh-block-embargoed-branches [apply|verify|check] [OPTIONS] REPO...
+
+Block creating, pushing to and deleting branches named embargoed/** on github.com
+by adding a repository ruleset (with no bypass actors) to each repository, using
+the gh CLI. Running it again updates the existing ruleset.
+
+COMMANDS:
+  apply     Add (or update) the ruleset in each repository (default)
+  check     Read-only: report for each repository whether creating and pushing to
+            embargoed/active/main are blocked by a repository rule (protected,
+            NOT PROTECTED or unknown). Exits 0 if all are protected, 2 if any is
+            unknown, else 1. Needs only read access.
+  verify    Check that the ruleset works: for each repository, clone it into a
+            temporary directory, create an orphan branch embargoed/active/main
+            containing only test.txt and try to push it. Reports BLOCKED (the
+            push was rejected by a repository rule), FAILED (the push worked, so
+            the branch now exists) or ERROR (inconclusive, e.g. clone or auth
+            problems). Prints a command to delete the branches that were created.
+            Exits 0 only if every repository blocked the push. The temporary
+            clones are always removed. A repository literally named 'verify'
+            must be written OWNER/verify.
+
+REPO is OWNER/NAME, or just NAME. A NAME is expanded with every owner in --owners.
+
+OPTIONS:
+  --owners A,B     Comma separated owners for the REPOs without one (may be repeated).
+                   @me stands for the login of the gh CLI user
+  --remove         apply only: delete the ruleset instead of adding it
+  --dry-run, -n    Validate and print what would run without running it (verify: no
+                   clone or push)
+  --help, -h       Show this help
+
+EXAMPLES:
+  gh-block-embargoed-branches rwinch/foo repo1 repo2 --owners owner1,owner2 -n
+    applies to rwinch/foo owner1/repo1 owner2/repo1 owner1/repo2 owner2/repo2
+  gh-block-embargoed-branches foo --owners spring-projects,@me -n
+    applies to spring-projects/foo and <your gh login>/foo
+  gh-block-embargoed-branches --remove rwinch/foo
+  gh-block-embargoed-branches check foo --owners spring-projects,@me
+  gh-block-embargoed-branches verify foo --owners spring-projects,@me
+
+REQUIREMENTS:
+  - The gh CLI, authenticated as an admin of every repository
+  - verify also needs git and push access to every repository
+USAGE
+}
+
+usage_error() {
+	echo "Error: $1" >&2
+	echo "Run 'gh-block-embargoed-branches --help' for usage." >&2
+	exit 1
+}
+
+problem() {
+	problems+=("$1")
+}
+
+fail_if_problems() {
+	[[ ${#problems[@]} -eq 0 ]] && return 0
+	local p
+	echo "Error: ${#problems[@]} problem(s) found. Nothing was changed:" >&2
+	for p in "${problems[@]}"; do
+		echo "  - $p" >&2
+	done
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+case $1 in
+	apply|verify|check) subcommand=$1; shift ;;
+esac
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--owners)
+			[[ -z "$2" || "$2" == -* ]] && usage_error "--owners requires a value"
+			owners+=("${(@s:,:)2}")
+			shift 2 ;;
+		--remove) remove=1; shift ;;
+		--dry-run|-n) dry_run=1; shift ;;
+		--help|-h) usage; exit 0 ;;
+		-*) usage_error "Unknown option: $1" ;;
+		*) positionals+=("$1"); shift ;;
+	esac
+done
+
+(( ${#positionals[@]} )) || usage_error "At least one repository is required"
+(( remove )) && [[ $subcommand == verify ]] && usage_error "--remove is not valid with verify"
+(( remove )) && [[ $subcommand == check ]] && usage_error "--remove is not valid with check"
+(( dry_run )) && [[ $subcommand == check ]] && usage_error "--dry-run is not valid with check, it only reads"
+
+command -v gh >/dev/null 2>&1 || { echo "Error: the gh CLI is not installed" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Repository expansion
+# ---------------------------------------------------------------------------
+if (( ${owners[(Ie)@me]} )); then
+	login=$(gh api user --jq .login 2>/dev/null) && [[ -n "$login" ]] || { echo "Error: @me needs the gh CLI to be logged in (could not read the user)" >&2; exit 1; }
+	owners=("${(@)owners/#@me/$login}")
+fi
+o=""
+for o in "${owners[@]}"; do
+	[[ $o =~ ^[^/[:space:]]+$ ]] || problem "invalid owner in --owners: '$o'"
+done
+owners=("${(@u)owners}")
+
+r=""
+for r in "${positionals[@]}"; do
+	if [[ $r == */* ]]; then
+		[[ $r =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]] && repos+=("$r") || problem "'$r' must look like OWNER/NAME"
+	elif [[ $r =~ ^[^[:space:]]+$ ]]; then
+		if (( ${#owners[@]} )); then
+			for o in "${owners[@]}"; do repos+=("$o/$r"); done
+		else
+			problem "'$r' has no owner, pass --owners OWNER[,OWNER...]"
+		fi
+	else
+		problem "invalid repository: '$r'"
+	fi
+done
+fail_if_problems
+repos=("${(@u)repos}")
+
+cmd_apply() {
+	# ---------------------------------------------------------------------------
+	# Ruleset
+	# ---------------------------------------------------------------------------
+	ruleset_body='{
+	  "name": "'$ruleset_name'",
+	  "target": "branch",
+	  "enforcement": "active",
+	  "bypass_actors": [],
+	  "conditions": {"ref_name": {"include": ["refs/heads/embargoed/**"], "exclude": []}},
+	  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}, {"type": "non_fast_forward"}]
+	}'
+
+	typeset -A ids
+	out=""
+	for r in "${repos[@]}"; do
+		out=$(gh api --paginate "repos/$r/rulesets" \
+			--jq '.[] | select(.name == "'$ruleset_name'" and .source_type == "Repository") | .id' 2>&1) || {
+			problem "$r: could not read rulesets (admin access needed): ${out//$nl/ }"
+			continue
+		}
+		ids[$r]=${out%%$nl*}
+	done
+	fail_if_problems
+
+	w=4
+	for r in "${repos[@]}"; do (( ${#r} > w )) && w=${#r}; done
+	echo "Repositories (${#repos[@]}):" >&2
+	for r in "${repos[@]}"; do echo "  $r" >&2; done
+	echo >&2
+	printf "%-${w}s  %s\n" REPO ACTION
+
+	typeset -a cmds
+	act=""
+	for r in "${repos[@]}"; do
+		id=${ids[$r]}
+		if (( remove )); then
+			if [[ -z "$id" ]]; then
+				printf "%-${w}s  %s\n" $r "skip (no ruleset)"
+				continue
+			fi
+			printf "%-${w}s  %s\n" $r "remove (ruleset $id)"
+			cmds+=("gh api -X DELETE repos/$r/rulesets/$id")
+		elif [[ -n "$id" ]]; then
+			printf "%-${w}s  %s\n" $r "update (ruleset $id)"
+			cmds+=("gh api -X PUT repos/$r/rulesets/$id --input -")
+		else
+			printf "%-${w}s  %s\n" $r "create"
+			cmds+=("gh api repos/$r/rulesets --input -")
+		fi
+	done
+
+	if (( dry_run )); then
+		echo
+		echo "Dry run, nothing was changed."
+		echo "Would run:"
+		for c in "${cmds[@]}"; do echo "  $c"; done
+		exit 0
+	fi
+
+	n=0
+	for c in "${cmds[@]}"; do
+		argv=(${(z)c})
+		if [[ $c == *"--input -"* ]]; then
+			print -r -- "$ruleset_body" | "${argv[@]}" >/dev/null || { echo "Error: failed: $c" >&2; exit 1 }
+		else
+			"${argv[@]}" >/dev/null || { echo "Error: failed: $c" >&2; exit 1 }
+		fi
+		(( n++ ))
+	done
+	if (( remove )); then
+		echo "Removed the ruleset from $n repository(ies)."
+	else
+		echo "Protected ${#repos[@]} repository(ies): creating, pushing to and deleting embargoed/** branches is blocked."
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+cmd_verify() {
+	local r rc res detail log w=4 c
+	local -a rows cleanup
+	local -i blocked=0 failed=0 errors=0
+	if (( dry_run )); then
+		echo "Dry run, nothing was cloned or pushed. For each repository it would:"
+		echo "  clone, create orphan branch $verify_branch with test.txt, push it, remove the clone"
+		for r in "${repos[@]}"; do echo "  $r"; done
+		return 0
+	fi
+	trap '[[ -n "$d" ]] && rm -rf "$d"' EXIT
+	trap '[[ -n "$d" ]] && rm -rf "$d"; exit 130' INT TERM
+	for r in "${repos[@]}"; do
+		(( ${#r} > w )) && w=${#r}
+		echo "==> $r"
+		res=ERROR; detail=""
+		d=$(mktemp -d) || { echo "Error: could not create a temporary directory" >&2; return 1 }
+		log=$d/push.log
+		if ! gh repo clone "$r" "$d/clone" -- --depth 1 --no-tags --single-branch; then
+			detail="clone failed"
+		elif ! (
+			cd "$d/clone" || exit 1
+			typeset -a ident
+			[[ -n "$(git config user.email)" ]] || ident=(-c user.name=$cmd_name -c user.email=noreply@invalid)
+			git switch -q --orphan $verify_branch &&
+				print -r -- $cmd_name > test.txt &&
+				git add test.txt &&
+				git "${ident[@]}" -c commit.gpgsign=false commit -q -m "Test that $verify_branch is blocked"
+		); then
+			detail="could not create the test branch"
+		else
+			git -C "$d/clone" push --no-verify origin $verify_branch 2>&1 | tee $log
+			rc=${pipestatus[1]}
+			if (( rc == 0 )); then
+				res=FAILED; detail="push succeeded, branch was created"
+				cleanup+=("gh api -X DELETE repos/$r/git/refs/heads/$verify_branch")
+			elif grep -qE 'GH013|Repository rule violations' $log; then
+				res=BLOCKED; detail="push rejected by a repository rule"
+			else
+				detail="push failed for another reason (see output)"
+			fi
+		fi
+		rm -rf "$d"; d=""
+		case $res in
+			BLOCKED) blocked+=1 ;;
+			FAILED) failed+=1 ;;
+			*) errors+=1 ;;
+		esac
+		rows+=("$r"$'\t'"$res"$'\t'"$detail")
+	done
+
+	local -a f
+	echo
+	printf "%-${w}s  %-7s  %s\n" REPO RESULT DETAIL
+	for r in "${rows[@]}"; do
+		f=("${(@ps:\t:)r}")
+		printf "%-${w}s  %-7s  %s\n" "${f[1]}" "${f[2]}" "${f[3]}"
+	done
+	echo
+	echo "$blocked blocked, $failed failed, $errors error(s). Temporary clones removed."
+	if (( ${#cleanup[@]} )); then
+		echo
+		echo "To remove the accidentally created branches:"
+		for c in "${cleanup[@]}"; do echo "  $c"; done
+	fi
+	(( failed == 0 && errors == 0 ))
+}
+
+# ---------------------------------------------------------------------------
+# Check
+# ---------------------------------------------------------------------------
+cmd_check() {
+	local r out rc w=4 result=0
+	for r in "${repos[@]}"; do (( ${#r} > w )) && w=${#r}; done
+	for r in "${repos[@]}"; do
+		out=$(gh api "repos/$r/rules/branches/$verify_branch" --jq '[.[].type] | join(",")' 2>&1); rc=$?
+		if (( rc != 0 )); then
+			printf "%-${w}s  unknown (%s)\n" $r "${out%%$nl*}"
+			result=2
+		elif [[ ",$out," == *,creation,* && ",$out," == *,update,* ]]; then
+			printf "%-${w}s  protected\n" $r
+		else
+			printf "%-${w}s  NOT PROTECTED\n" $r
+			(( result == 0 )) && result=1
+		fi
+	done
+	return $result
+}
+
+case $subcommand in
+	check) cmd_check; exit $? ;;
+	apply) cmd_apply ;;
+	verify) cmd_verify; exit $? ;;
+esac

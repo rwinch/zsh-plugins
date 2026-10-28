@@ -1,0 +1,123 @@
+= gh-block-embargoed-branches
+
+A zsh plugin that uses the `gh` CLI to block creating, pushing to and deleting branches named `embargoed/**` on github.com, for a set of repositories.
+
+== Features
+
+* Adds a repository ruleset named `block-embargoed-branches` to each repository. It targets `refs/heads/embargoed/**` with the `creation`, `update`, `deletion` and `non_fast_forward` rules and has no bypass actors
+* Running it again updates the existing ruleset instead of adding a second one
+* Repositories are `OWNER/NAME`, or just `NAME` which is expanded with every owner in `--owners`
+* `--remove` deletes the ruleset
+* `check` reads the rules that apply to `embargoed/active/main` and reports whether each repository is protected. It needs only read access and changes nothing
+* `verify` proves it works: it really tries to push `embargoed/active/main` to each repository and reports which pushes were blocked
+* `--dry-run` validates and prints the `gh` commands, and changes nothing
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins gh-block-embargoed-branches
+----
+
+Or manually by adding the plugin directory to your `PATH`. The plugin defines the `ghbeb` alias for `gh-block-embargoed-branches`.
+
+== Usage
+
+[source,bash]
+----
+gh-block-embargoed-branches [apply|check|verify] [OPTIONS] REPO...
+----
+
+`apply` is the default. The command is only recognized as the first argument, so a repository literally named `verify` must be written `OWNER/verify`.
+
+[%header,cols="3,6"]
+|===
+| Option | Description
+| `--owners A,B` | Comma separated owners for the repositories without one. Repeatable, and may appear anywhere. `@me` stands for the login of the `gh` CLI user (`gh api user`), as it does in `gh` itself.
+| `--remove` | `apply` only. Delete the ruleset instead of adding it.
+| `--dry-run`, `-n` | Validate and print what would run without running it. With `verify` nothing is cloned or pushed.
+| `--help`, `-h` | Display the help message.
+|===
+
+`gh-block-embargoed-branches rwinch/foo repo1 repo2 --owners owner1,owner2` applies to `rwinch/foo`, `owner1/repo1`, `owner2/repo1`, `owner1/repo2` and `owner2/repo2`.
+
+With `@me`, `gh-block-embargoed-branches foo --owners spring-projects,@me` applies to `spring-projects/foo` and `<your login>/foo`.
+
+== Check
+
+[source,bash]
+----
+$ gh-block-embargoed-branches check foo --owners spring-projects,@me
+spring-projects/foo  NOT PROTECTED
+rwinch/foo           protected
+----
+
+Uses `gh api repos/OWNER/NAME/rules/branches/embargoed/active/main`, so it also sees rulesets defined by the organization. A repository is `protected` when the `creation` and `update` rules apply to that branch, `unknown` when the lookup fails. The exit status is 0 if all are protected, 2 if any is unknown, else 1. `--remove` and `--dry-run` are not valid with `check`. Classic branch protection rules are not reported by that endpoint.
+
+== Verify
+
+[source,bash]
+----
+gh-block-embargoed-branches verify foo --owners spring-projects,@me
+----
+
+For each repository, in turn, `verify` really tries to create the branch, so on a repository that is not protected the branch will exist afterwards:
+
+. Clones the repository (shallow) into a temporary directory with `gh repo clone`
+. Creates an orphan branch `embargoed/active/main` (no history) containing only `test.txt`, whose content is the command name
+. Pushes it, showing git's output
+. Removes the temporary clone, whatever the outcome (also on Ctrl-C)
+
+The result per repository:
+
+[%header,cols="2,6"]
+|===
+| Result | Meaning
+| `BLOCKED` | The push was rejected by a repository rule (`GH013`). This is what you want.
+| `FAILED` | The push succeeded, so the branch was created and the repository is not protected.
+| `ERROR` | Inconclusive: the clone failed, or the push was rejected for another reason such as authentication.
+|===
+
+At the end it prints a summary and, for every `FAILED` repository, a command that deletes the accidentally created branch. It uses the API, so it does not need the clone that is already gone:
+
+[source,text]
+----
+1 blocked, 1 failed, 0 error(s). Temporary clones removed.
+
+To remove the accidentally created branches:
+  gh api -X DELETE repos/owner2/foo/git/refs/heads/embargoed/active/main
+----
+
+The exit status is 0 only when every repository is `BLOCKED`. If a partial ruleset also blocks deleting the branch, run `--remove` first.
+
+== Validation
+
+Everything is checked first and all problems are reported together. Nothing is changed if there is any: a name without an owner and no `--owners`, a malformed repository, or a repository whose rulesets cannot be read (the token needs admin access, and rulesets are unavailable on private repositories of free plans).
+
+== Examples
+
+[source,text]
+----
+$ gh-block-embargoed-branches rwinch/foo repo1 --owners owner1 -n
+Repositories (2):
+  rwinch/foo
+  owner1/repo1
+
+REPO          ACTION
+rwinch/foo    create
+owner1/repo1  update (ruleset 4821)
+
+Dry run, nothing was changed.
+Would run:
+  gh api repos/rwinch/foo/rulesets --input -
+  gh api -X PUT repos/owner1/repo1/rulesets/4821 --input -
+----
+
+== Tests
+
+[source,bash]
+----
+zsh test/test.sh [name-filter]
+----
+
+The tests put a stub `gh` first on `PATH`, so nothing touches GitHub.

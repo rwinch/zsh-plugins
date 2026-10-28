@@ -1,0 +1,48 @@
+#compdef gh-block-embargoed-branches ghbeb
+
+_gh-block-embargoed-branches() {
+	local -a common subcmds
+	local sub=apply
+
+	common=(
+		'*--owners[owners for repositories without one (comma separated, @me is the gh user)]:owners:'
+		'(-n --dry-run)'{-n,--dry-run}'[validate and print what would run without running it]'
+		'(-h --help)'{-h,--help}'[show this help message]'
+	)
+
+	if (( CURRENT == 2 )) && [[ $words[2] != -* ]]; then
+		subcmds=(
+			'apply:add or update the ruleset in each repository (default)'
+			'check:read-only, report whether each repository blocks embargoed/active/main'
+			'verify:try to push embargoed/active/main to each repository and report if it was blocked'
+		)
+		_describe -t commands 'gh-block-embargoed-branches command' subcmds
+		return
+	fi
+
+	case $words[2] in
+		apply|verify|check) sub=$words[2] ;;
+	esac
+
+	case $sub in
+		apply)
+			_arguments -s -S \
+				$common \
+				'--remove[delete the ruleset instead of adding it]' \
+				'*:repository (OWNER/NAME or NAME):'
+			;;
+		verify)
+			_arguments -s -S \
+				$common \
+				'*:repository (OWNER/NAME or NAME):'
+			;;
+		check)
+			_arguments -s -S \
+				'*--owners[owners for repositories without one (comma separated, @me is the gh user)]:owners:' \
+				'(-h --help)'{-h,--help}'[show this help message]' \
+				'*:repository (OWNER/NAME or NAME):'
+			;;
+	esac
+}
+
+_gh-block-embargoed-branches "$@"
