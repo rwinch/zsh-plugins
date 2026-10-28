@@ -50,6 +50,10 @@ echo "$@" >> "$GH_STUB_LOG"
 case $2 in
 	user) echo "$GH_STUB_LOGIN" ;;
 	repos/*)
+		if [[ "$*" == *permissions.admin* ]]; then
+			grep -qx "${2#repos/}" "$GH_STUB_NOT_ADMIN" && echo false || echo true
+			exit 0
+		fi
 		line=$(grep "^${2#repos/} " "$GH_STUB_REPOS") || { echo "gh: Not Found (HTTP 404)" >&2; exit 1 }
 		echo "${line#* }"
 		;;
@@ -57,6 +61,9 @@ esac
 EOF
 	chmod +x $R/bin/gh
 	: > $R/gh-repos
+	: > $R/not-admin
+	export GH_STUB_NOT_ADMIN=$R/not-admin EMB_LOG=$R/emb-log EMB_DIR=$R/emb
+	mkdir -p $R/emb; : > $R/emb-log
 	: > $R/gh-log
 	export GH_STUB_REPOS=$R/gh-repos GH_STUB_LOG=$R/gh-log GH_STUB_LOGIN=rwinch
 	unset GH_STUB_FAIL
@@ -67,6 +74,43 @@ EOF
 	CODE=$R/home/code
 	CLEAN_PATH="/usr/bin:/bin"
 }
+
+# with_ghbeb: install a stub gh-block-embargoed-branches. check exits with the number in
+# $EMB_DIR/OWNER_REPO (default 0 = protected), apply exits with $EMB_APPLY_RC (default 0).
+with_ghbeb() {
+	cat > $R/bin/gh-block-embargoed-branches <<'EOF2'
+#!/bin/zsh
+echo "$@" >> "$EMB_LOG"
+case $1 in
+	check)
+		f=$EMB_DIR/${2//\//_}
+		rc=0; [[ -e $f ]] && rc=$(<$f)
+		(( rc == 0 )) && echo "$2  protected"
+		(( rc == 1 )) && echo "$2  NOT PROTECTED"
+		(( rc == 2 )) && echo "$2  unknown (HTTP 500)"
+		exit $rc ;;
+	apply) exit ${EMB_APPLY_RC:-0} ;;
+esac
+EOF2
+	chmod +x $R/bin/gh-block-embargoed-branches
+}
+# embargo_state OWNER/REPO RC: what the stub check reports
+embargo_state() { echo $2 > $R/emb/${1//\//_} }
+# run_tty ANSWER ARGS...: like run, but stdin is a terminal that has ANSWER typed on it
+run_tty() {
+	local ans=$1; shift
+	set +e
+	(cd $R && HOME=$R/home PATH=$R/bin:$PATH python3 -c '
+import os, subprocess, sys
+m, s = os.openpty()
+os.write(m, sys.argv[1].encode())
+sys.exit(subprocess.run(sys.argv[2:], stdin=s).returncode)
+' "$ans" $SCRIPT "$@" > $R/stdout 2> $R/stderr)
+	rc=$?
+	set -e
+	out=$(<$R/stderr); sout=$(<$R/stdout)
+}
+emb_calls() { grep -c "$1" $R/emb-log; true }
 
 # gh_has OWNER/REPO PRIVATE: make the gh stub know a repository
 gh_has() { echo "$1 $2" >> $R/gh-repos }
@@ -330,6 +374,96 @@ t "clone function: dry-run does not change directory" '
 		print -r -- \$PWD
 	")
 	[[ "$res" == "$R" ]]
+'
+
+# ---- embargoed branch protection ----
+emb_setup() {
+	gh_has spring-projects/spring-security-commercial true
+	gh_has spring-projects/spring-security true
+	gh_has rwinch/spring-security false
+	with_ghbeb
+}
+
+t "embargo: command not installed warns at the end" '
+	emb_setup; rm $R/bin/gh-block-embargoed-branches
+	run spring-projects/spring-security; expect_rc 0
+	expect_out "Warning: gh-block-embargoed-branches is not installed.*spring-projects/spring-security, rwinch/spring-security"
+	expect_sout "$CODE/spring-projects/spring-security/main"
+'
+
+t "embargo: both protected, nothing asked or applied" '
+	emb_setup
+	run_tty "" spring-projects/spring-security; expect_rc 0
+	expect_out "Checking that embargoed/\*\* branches are blocked in spring-projects/spring-security, rwinch/spring-security"
+	reject_out "Warning: .*embargoed"; reject_out "Block embargoed"
+	[[ $(emb_calls "^check ") -eq 2 && $(emb_calls "^apply") -eq 0 ]]
+'
+
+t "embargo: only the oss and fork repositories are checked, not commercial" '
+	emb_setup
+	run_tty "" spring-projects/spring-security
+	! grep -q commercial $R/emb-log
+'
+
+t "embargo: unprotected, default answer sets it up in both" '
+	emb_setup; embargo_state spring-projects/spring-security 1; embargo_state rwinch/spring-security 1
+	run_tty "
+" spring-projects/spring-security; expect_rc 0
+	expect_out "Block embargoed/\*\* branches in spring-projects/spring-security, rwinch/spring-security now\? \[Y/n\]"
+	grep -qx "apply spring-projects/spring-security rwinch/spring-security" $R/emb-log
+	reject_out "Warning: .*embargoed"
+'
+
+t "embargo: answering n warns at the end and applies nothing" '
+	emb_setup; embargo_state rwinch/spring-security 1
+	run_tty "n
+" spring-projects/spring-security; expect_rc 0
+	expect_out "Warning: embargoed/\*\* branches are NOT blocked in rwinch/spring-security\. Run: gh-block-embargoed-branches rwinch/spring-security"
+	[[ $(emb_calls "^apply") -eq 0 ]]
+'
+
+t "embargo: not an admin warns that it could not be set up, others still asked" '
+	emb_setup; embargo_state spring-projects/spring-security 1; embargo_state rwinch/spring-security 1
+	echo spring-projects/spring-security > $R/not-admin
+	run_tty "y
+" spring-projects/spring-security; expect_rc 0
+	expect_out "Warning: embargoed/\*\* branches are NOT blocked in spring-projects/spring-security and you are not an admin.*Ask an admin"
+	expect_out "Block embargoed/\*\* branches in rwinch/spring-security now"
+	grep -qx "apply rwinch/spring-security" $R/emb-log
+'
+
+t "embargo: no terminal does not ask and warns with the command" '
+	emb_setup; embargo_state rwinch/spring-security 1
+	run spring-projects/spring-security; expect_rc 0
+	expect_out "Warning: .*NOT blocked in rwinch/spring-security \(not asking without a terminal\)"
+	[[ $(emb_calls "^apply") -eq 0 ]]
+'
+
+t "embargo: check that cannot read warns" '
+	emb_setup; embargo_state rwinch/spring-security 2
+	run_tty "" spring-projects/spring-security; expect_rc 0
+	expect_out "Warning: Could not check whether embargoed/\*\* branches are blocked in rwinch/spring-security"
+'
+
+t "embargo: failing apply warns" '
+	emb_setup; embargo_state rwinch/spring-security 1
+	export EMB_APPLY_RC=1
+	run_tty "y
+" spring-projects/spring-security; expect_rc 0
+	expect_out "Warning: Could not block embargoed/\*\* branches in rwinch/spring-security"
+'
+
+t "embargo: no commercial repository means no check" '
+	gh_has spring-projects/spring-framework false; with_ghbeb
+	run_tty "" spring-projects/spring-framework; expect_rc 0
+	[[ ! -s $R/emb-log ]]; reject_out "embargoed"
+'
+
+t "embargo: dry-run checks but never asks or applies" '
+	emb_setup; embargo_state rwinch/spring-security 1
+	run --dry-run spring-projects/spring-security; expect_rc 0
+	expect_out "Would ask to block embargoed/\*\* branches in rwinch/spring-security"
+	[[ $(emb_calls "^check ") -eq 2 && $(emb_calls "^apply") -eq 0 ]]
 '
 
 echo ""

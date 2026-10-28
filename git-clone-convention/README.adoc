@@ -8,6 +8,7 @@ A zsh plugin that provides `clone`, which clones a Git repository into `~/code/$
 * When `${owner}/${repository}-commercial` exists as a private repository, the remotes are `oss` (the clone) and `commercial` (added and fetched after the clone), the names link:../gh-milestones[gh-milestones] and the link:../git-branches[git-branches] commands expect
 * Otherwise the remote is named after the owner instead of `origin`
 * Adds your fork (`${login}/${repository}`) as a remote named after your login, when it exists
+* When there is a commercial repository and link:../gh-block-embargoed-branches[gh-block-embargoed-branches] is installed, checks that `embargoed/**` branches are blocked in the OSS repository and in your fork, and offers to set that up when they are not (default yes)
 * Detects an existing clone and changes into it instead of cloning
 * `--dry-run` looks everything up and prints the plan, and changes nothing
 * Adds link:https://github.com/mfaerevaag/wd[wd] shortcuts (when `wd` is available)
@@ -17,6 +18,7 @@ A zsh plugin that provides `clone`, which clones a Git repository into `~/code/$
 
 * `gh` (optional). It is used to find the commercial repository, your login and your fork. Without it, or when it fails (not logged in, no network), those steps are skipped with a warning and the remote is named after the owner.
 * `wd` (optional) for the shortcuts.
+* link:../gh-block-embargoed-branches[gh-block-embargoed-branches] (optional) for the embargoed branch check. Without it a warning is printed at the end.
 
 == Installation
 
@@ -82,6 +84,15 @@ Every other option is passed to `git clone` (`--branch`, `--depth`, `--single-br
 ** any other repository gets a shortcut with its full name to the clone
 ** an existing shortcut with the same name is left alone and a warning is printed
 ** without `wd`, a note says no shortcuts will be added
+
+== Embargoed branches
+
+After a fresh clone with a commercial repository (that is where `embargoed/**` branches belong), `clone` runs `gh-block-embargoed-branches check` on `${owner}/${repository}` and on your fork (when there is one), never on the commercial repository.
+
+* All protected: nothing more is printed.
+* Not protected where you are an admin: one question, `Block embargoed/** branches in A, B now? [Y/n]`. Yes (the default) runs `gh-block-embargoed-branches apply A B`.
+* Everything else is a warning printed at the end, after the other output: the command is not installed, you are not an admin of a repository (it names the command an admin should run), the check could not read the rules, you answered no, `apply` failed, or there is no terminal to ask on (the command to run is printed instead).
+* `--dry-run` runs the read-only check and reports, but never asks or applies.
 
 == Examples
 

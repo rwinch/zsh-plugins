@@ -27,6 +27,8 @@ typeset -a rurls
 typeset -a wd_names      # wd shortcuts to add, parallel to wd_paths
 typeset -a wd_paths
 typeset -a wd_warnings
+typeset -a end_warnings  # printed after everything else
+embargo_cmd=gh-block-embargoed-branches
 
 # Options of git clone that take a separate value, so the value is not mistaken for the repository
 typeset -a value_opts
@@ -153,6 +155,60 @@ plan_wd() {
 			wd_names+=("${names[$i]}"); wd_paths+=("${paths[$i]}")
 		fi
 	done
+}
+
+# Checks that embargoed/** branches are blocked in the OSS repository and in your fork, when
+# there is a commercial repository (that is where those branches belong). Problems are added
+# to end_warnings. With $1 set (dry run) it only reports, it does not ask or change anything.
+embargo_check() {
+	local dry=$1 t rc a reply
+	local -a targets unprotected fixable
+	(( use_commercial )) || return 0
+	targets=("$owner/$repo")
+	(( use_fork )) && targets+=("$login/$repo")
+	if (( ! $+commands[$embargo_cmd] )); then
+		end_warnings+=("$embargo_cmd is not installed, so it was not checked that embargoed/** branches are blocked in ${(j:, :)targets}. Install it with: antigen bundle rwinch/zsh-plugins gh-block-embargoed-branches")
+		return 0
+	fi
+	print -ru2 -- "Checking that embargoed/** branches are blocked in ${(j:, :)targets}"
+	for t in "${targets[@]}"; do
+		$embargo_cmd check "$t" >&2; rc=$?
+		case $rc in
+			0) ;;
+			1) unprotected+=("$t") ;;
+			*) end_warnings+=("Could not check whether embargoed/** branches are blocked in $t (see the output above)") ;;
+		esac
+	done
+	for t in "${unprotected[@]}"; do
+		a=$(gh api "repos/$t" --jq .permissions.admin 2>/dev/null)
+		if [[ $a == true ]]; then
+			fixable+=("$t")
+		else
+			end_warnings+=("embargoed/** branches are NOT blocked in $t and you are not an admin, so they could not be set up. Ask an admin to run: $embargo_cmd $t")
+		fi
+	done
+	(( ${#fixable} )) || return 0
+	if (( dry )); then
+		print -ru2 -- "Would ask to block embargoed/** branches in ${(j:, :)fixable}"
+		return 0
+	fi
+	if [[ ! -t 0 ]]; then
+		end_warnings+=("embargoed/** branches are NOT blocked in ${(j:, :)fixable} (not asking without a terminal). Run: $embargo_cmd ${(j: :)fixable}")
+		return 0
+	fi
+	print -nu2 -- "Block embargoed/** branches in ${(j:, :)fixable} now? [Y/n] "
+	read -r reply
+	if [[ -z $reply || $reply == [yY]* ]]; then
+		$embargo_cmd apply "${fixable[@]}" >&2 \
+			|| end_warnings+=("Could not block embargoed/** branches in ${(j:, :)fixable}. Run: $embargo_cmd ${(j: :)fixable}")
+	else
+		end_warnings+=("embargoed/** branches are NOT blocked in ${(j:, :)fixable}. Run: $embargo_cmd ${(j: :)fixable}")
+	fi
+}
+
+print_end_warnings() {
+	local m
+	for m in "${end_warnings[@]}"; do warn "$m"; done
 }
 
 # ---- arguments ----
@@ -307,6 +363,11 @@ if (( dry_run )); then
 		print -ru2 -- ""
 		print -ru2 -- "  $m"
 	done
+	if (( use_commercial )); then
+		print -ru2 -- ""
+		embargo_check 1
+		print_end_warnings
+	fi
 	print -ru2 -- ""
 	print -ru2 -- "Dry run, nothing was cloned."
 	exit 0
@@ -366,6 +427,9 @@ for m in "${wd_warnings[@]}"; do warn "$m"; done
 for (( i=1; i<=${#wd_names}; i++ )); do
 	print -ru2 -- "Adding wd shortcut: ${wd_names[$i]} -> $(tilde ${wd_paths[$i]})"
 done
+
+embargo_check
+print_end_warnings
 
 # stdout: the directory to change into, then the wd shortcuts to add
 print -r -- "$final_dir"
