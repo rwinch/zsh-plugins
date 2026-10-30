@@ -6,15 +6,17 @@ _git-worktrees-create-remotes() {
 	_describe -t remotes 'remote' remotes
 }
 
-# Branches of the remote given by --remote, as patterns
+# Branches of the remote given by --remote (local branches without it), as patterns
 _git-worktrees-create-patterns() {
 	local remote=${opt_args[--remote]}
 	local -a branches
 	if [[ -n $remote ]]; then
 		branches=(${${(f)"$(git for-each-ref --format='%(refname:short)' "refs/remotes/$remote" 2>/dev/null)"}#$remote/})
 		branches=(${branches:#HEAD})
+	else
+		branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"})
 	fi
-	_describe -t branches 'remote branch or glob pattern (quote globs)' branches
+	_describe -t branches 'branch or glob pattern (quote globs)' branches
 }
 
 if [[ $service == gwwca ]]; then
@@ -24,7 +26,7 @@ if [[ $service == gwwca ]]; then
 		'--dry-run[show what would be created without creating anything]'
 else
 	_arguments -s \
-		'--remote[remote to create worktrees from]:remote:_git-worktrees-create-remotes' \
+		'--remote[remote to create worktrees from (default: local branches)]:remote:_git-worktrees-create-remotes' \
 		'--name-prefix[prepend PREFIX to the local branch name and worktree directory]:prefix:' \
 		'--skip-missing-remote[if the remote does not exist, say so and exit 0]' \
 		'--dry-run[show what would be created without fetching or creating anything]' \

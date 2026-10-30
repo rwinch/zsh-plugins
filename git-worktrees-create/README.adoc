@@ -4,10 +4,11 @@ A zsh plugin that automates the creation of git worktrees for version branches a
 
 == Overview
 
-This plugin provides a command to automatically create git worktrees for all matching branches from a remote repository. It's particularly useful for projects that maintain multiple version branches (e.g., 5.8.x, 6.0.x, 6.1.x) and need to work on them simultaneously.
+This plugin provides a command to automatically create git worktrees for all matching branches, either the local branches or those of a remote repository. It's particularly useful for projects that maintain multiple version branches (e.g., 5.8.x, 6.0.x, 6.1.x) and need to work on them simultaneously.
 
 == Features
 
+* Without `--remote` uses the local branches, with `--remote` the branches of that remote
 * Takes the branches to process as shell globs or literal branch names (e.g., `main`, `release/*`, `[0-9]*.[0-9]*.x`, `embargoed/*`)
 * `gwwca` runs the usual patterns against the `commercial` and `oss` remotes
 * Creates worktrees in the parent directory (`../branch-name`), also when run from a worktree of a slashed branch such as `release/1.0` or from a subdirectory
@@ -38,16 +39,18 @@ Commercial runs first, so a `.x` branch that exists on both remotes comes from c
 
 [source,bash]
 ----
-git-worktrees-create --remote REMOTE [OPTIONS] PATTERN [PATTERN ...]
+git-worktrees-create [--remote REMOTE] [OPTIONS] PATTERN [PATTERN ...]
 ----
+
+Without `--remote` nothing is fetched and no branch is created: each local branch matching a pattern gets a worktree at `../branch-name`, unless it is already checked out. To get a set of branches to match, create them with git (`for v in 1.0 1.1 1.2; do git branch release/$v; done`) and run `git-worktrees-create 'release/*'`.
 
 Quote globs so the shell does not expand them. `*` also matches `/`, so `embargoed/*` covers `embargoed/CVE-2025-1234/5.8.x`. At least one pattern is required.
 
 === Options
 
-* `--remote REMOTE` - The remote to create worktrees from (required)
-* `--name-prefix PREFIX` - Prepend `PREFIX` to the local branch name and the worktree directory, for a remote whose branch names clash with local ones (`commercial/docs-build` becomes `commercial-docs-build`)
-* `--skip-missing-remote` - If the remote does not exist, say so and exit 0
+* `--remote REMOTE` - The remote to create worktrees from (default: use the local branches)
+* `--name-prefix PREFIX` - Prepend `PREFIX` to the local branch name and the worktree directory, for a remote whose branch names clash with local ones (`commercial/docs-build` becomes `commercial-docs-build`). Requires `--remote`
+* `--skip-missing-remote` - If the remote does not exist, say so and exit 0 (requires `--remote`)
 * `--dry-run` - Show what would be created without fetching or creating anything (uses the branches already fetched)
 * `--help` - Display help message
 
@@ -55,6 +58,9 @@ Quote globs so the shell does not expand them. `*` also matches `/`, so `embargo
 
 [source,bash]
 ----
+# Create worktrees for the local release/* branches and main
+git-worktrees-create 'release/*' main
+
 # Create worktrees for main and the release/* branches of the oss remote
 git-worktrees-create --remote oss 'release/*' main
 
@@ -70,19 +76,18 @@ git-worktrees-create --remote commercial --name-prefix commercial- docs-build
 The command performs the following steps:
 
 1. Validates you're in a git repository
-2. Checks that the given remote exists
-3. Fetches the latest changes from the remote
-4. Iterates through all remote branches
-5. For each branch matching one of the patterns:
+2. With `--remote`, checks that the remote exists and fetches the latest changes from it
+3. Iterates through all branches of the remote, or the local branches without `--remote`
+4. For each branch matching one of the patterns:
    * Checks if the branch is already checked out in a worktree, or a worktree already exists at `../branch-name`
    * If not:
-   ** Creates a local tracking branch if it doesn't exist
+   ** With `--remote`, creates a local tracking branch if it doesn't exist
    ** Creates a worktree at `../branch-name`
 
 == Requirements
 
 * Must be run from within a git repository
-* The specified remote must exist
+* The remote given by `--remote` must exist
 * Parent directory (`../`) must be writable
 * Git worktree support (Git 2.5+)
 
