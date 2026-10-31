@@ -1,10 +1,10 @@
 = gh-block-embargoed-branches
 
-A zsh plugin that uses the `gh` CLI to block creating, pushing to and deleting branches named `embargoed/**` on github.com, for a set of repositories.
+A zsh plugin that uses the `gh` CLI to block creating, pushing to and deleting branches with `embargoed` anywhere in their name (for example `embargoed/active/main`, `pr/embargoed/a` or `my-embargoed-fix`) on github.com, for a set of repositories.
 
 == Features
 
-* Adds a repository ruleset named `block-embargoed-branches` to each repository. It targets `refs/heads/embargoed/**` with the `creation`, `update`, `deletion` and `non_fast_forward` rules and has no bypass actors
+* Adds a repository ruleset named `block-embargoed-branches` to each repository. It targets `refs/heads/*embargoed*`, `refs/heads/*embargoed*/**`, `refs/heads/**/*embargoed*` and `refs/heads/**/*embargoed*/**` (one pattern cannot match at every depth, because `*` does not cross `/`) with the `creation`, `update`, `deletion` and `non_fast_forward` rules and has no bypass actors
 * Running it again updates the existing ruleset instead of adding a second one
 * Repositories are `OWNER/NAME`, or just `NAME` which is expanded with every owner in `--owners`
 * `--remove` deletes the ruleset

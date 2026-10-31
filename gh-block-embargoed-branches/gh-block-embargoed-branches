@@ -13,7 +13,7 @@ usage() {
 	cat <<'USAGE'
 Usage: gh-block-embargoed-branches [apply|verify|check] [OPTIONS] REPO...
 
-Block creating, pushing to and deleting branches named embargoed/** on github.com
+Block creating, pushing to and deleting branches with embargoed in their name on github.com
 by adding a repository ruleset (with no bypass actors) to each repository, using
 the gh CLI. Running it again updates the existing ruleset.
 
@@ -161,7 +161,7 @@ cmd_apply() {
 	  "target": "branch",
 	  "enforcement": "active",
 	  "bypass_actors": [],
-	  "conditions": {"ref_name": {"include": ["refs/heads/embargoed/**"], "exclude": []}},
+	  "conditions": {"ref_name": {"include": ["refs/heads/*embargoed*", "refs/heads/*embargoed*/**", "refs/heads/**/*embargoed*", "refs/heads/**/*embargoed*/**"], "exclude": []}},
 	  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}, {"type": "non_fast_forward"}]
 	}'
 
@@ -231,7 +231,7 @@ cmd_apply() {
 	if (( remove )); then
 		echo "Removed the ruleset from $n repository(ies)."
 	else
-		echo "Protected $n repository(ies): creating, pushing to and deleting embargoed/** branches is blocked."
+		echo "Protected $n repository(ies): creating, pushing to and deleting branches with embargoed in their name is blocked."
 	fi
 	(( ${#archived} )) && echo "Skipped ${#archived} archived repository(ies)."
 	return 0
