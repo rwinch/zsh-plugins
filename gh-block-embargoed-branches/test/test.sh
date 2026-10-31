@@ -141,7 +141,7 @@ t "create: POST with the ruleset body" '
 	run rwinch/foo
 	expect_rc 0; expect_out "create"
 	called "api repos/rwinch/foo/rulesets --input -"
-	called "\"include\": [\"refs/heads/*embargoed*\", \"refs/heads/*embargoed*/**\", \"refs/heads/**/*embargoed*\", \"refs/heads/**/*embargoed*/**\"]"
+	called "\"include\": [\"refs/heads/**/*embargoed*\", \"refs/heads/**/*embargoed*/**/*\"]"
 	called "\"bypass_actors\": []"
 	called "\"enforcement\": \"active\""
 	for r in creation update deletion non_fast_forward; do called "\"type\": \"$r\""; done

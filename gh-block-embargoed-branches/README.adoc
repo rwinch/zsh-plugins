@@ -4,7 +4,7 @@ A zsh plugin that uses the `gh` CLI to block creating, pushing to and deleting b
 
 == Features
 
-* Adds a repository ruleset named `block-embargoed-branches` to each repository. It targets `refs/heads/*embargoed*`, `refs/heads/*embargoed*/**`, `refs/heads/**/*embargoed*` and `refs/heads/**/*embargoed*/**` (one pattern cannot match at every depth, because `*` does not cross `/`) with the `creation`, `update`, `deletion` and `non_fast_forward` rules and has no bypass actors
+* Adds a repository ruleset named `block-embargoed-branches` to each repository. It targets `refs/heads/**/*embargoed*` and `refs/heads/**/*embargoed*/**/*` (a trailing `/**` does not match across `/`, so `/**/*` is needed to match nested branches) with the `creation`, `update`, `deletion` and `non_fast_forward` rules and has no bypass actors
 * Running it again updates the existing ruleset instead of adding a second one
 * Repositories are `OWNER/NAME`, or just `NAME` which is expanded with every owner in `--owners`
 * `--remove` deletes the ruleset

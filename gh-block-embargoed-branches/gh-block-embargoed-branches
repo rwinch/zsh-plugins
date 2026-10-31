@@ -161,7 +161,7 @@ cmd_apply() {
 	  "target": "branch",
 	  "enforcement": "active",
 	  "bypass_actors": [],
-	  "conditions": {"ref_name": {"include": ["refs/heads/*embargoed*", "refs/heads/*embargoed*/**", "refs/heads/**/*embargoed*", "refs/heads/**/*embargoed*/**"], "exclude": []}},
+	  "conditions": {"ref_name": {"include": ["refs/heads/**/*embargoed*", "refs/heads/**/*embargoed*/**/*"], "exclude": []}},
 	  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}, {"type": "non_fast_forward"}]
 	}'
 
