@@ -1,0 +1,1 @@
+alias awake='caffeinate -dimsu'

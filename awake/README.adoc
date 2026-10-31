@@ -1,0 +1,43 @@
+= awake
+
+A simple zsh plugin that provides an `awake` alias for keeping a macOS machine awake.
+
+== Overview
+
+The alias expands to:
+
+[source,bash]
+----
+alias awake='caffeinate -dimsu'
+----
+
+The flags prevent the display (`-d`), idle (`-i`) and disk (`-m`) sleep, system sleep on AC power (`-s`), and declare the user active (`-u`).
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins awake
+----
+
+Or manually by sourcing the plugin file in your `.zshrc`:
+
+[source,bash]
+----
+source /path/to/awake/awake.plugin.zsh
+----
+
+== Usage
+
+[source,bash]
+----
+# keep the machine awake until Ctrl+C
+awake
+
+# keep the machine awake while a command runs
+awake ./long-running-task.sh
+----
+
+== Requirements
+
+* macOS (`caffeinate` is built in)
