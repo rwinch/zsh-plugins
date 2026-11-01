@@ -35,6 +35,7 @@ antigen bundle rwinch/zsh-plugins gh-prs
 antigen bundle rwinch/zsh-plugins gh-update
 antigen bundle rwinch/zsh-plugins get-security-module-names
 antigen bundle rwinch/zsh-plugins git-recent
+antigen bundle rwinch/zsh-plugins git-worktrees-switch
 antigen bundle rwinch/zsh-plugins gmi
 antigen bundle rwinch/zsh-plugins gw
 

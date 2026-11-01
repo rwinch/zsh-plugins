@@ -1,0 +1,82 @@
+= git-worktrees-switch
+
+A zsh plugin that switches many git worktrees at once between a branch and its feature branch.
+
+== Overview
+
+`git-branches-merge-forward --feature` leaves every worktree on a `feature/<branch>/<name>` branch.
+This command switches all of those worktrees back to their branches in one step, and onto the feature branches again.
+
+== Features
+
+* Switches every worktree on `feature/<branch>/NAME` back to `<branch>`, or only those of one feature
+* With `--feature NAME` switches every worktree onto `feature/<branch>/NAME`
+* Works with embargoed branches: `feature/embargoed/frozen/7.0.x/NAME` and `embargoed/frozen/7.0.x`
+* Never forces: a worktree with changes (untracked files count), with a merge, rebase or cherry-pick in progress, or whose target branch is checked out in another worktree is skipped and reported
+* Leaves detached worktrees and worktrees on other branches alone
+* `--dry-run` shows what would be switched
+* Ends with `Done: N switched, M skipped`, and exit status 1 if a worktree had to be skipped because of its state
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins/git-worktrees-switch
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+The plugin defines the alias `gwws` for `git-worktrees-switch`.
+
+[source,bash]
+----
+git-worktrees-switch [--dry-run] [NAME]
+git-worktrees-switch [--dry-run] --feature NAME
+----
+
+=== Options
+
+* `NAME` - Only switch back the worktrees on `feature/<branch>/NAME` (default: every feature branch)
+* `-f`, `--feature NAME` - Switch the worktrees onto `feature/<branch>/NAME`, for the branches that are not feature branches. A worktree whose feature branch does not exist is skipped
+* `--dry-run` - Show what would be switched without switching anything
+* `--help` - Display help message
+
+`NAME` may not contain a `/`, as for `--feature` of `git-branches-merge-forward`.
+
+=== Examples
+
+[source,bash]
+----
+gwws --dry-run         # show what would be switched back
+gwws                   # back from every feature branch
+gwws bug1              # back from the feature branches of bug1 only
+gwws --feature bug2    # onto the feature branches of bug2
+----
+
+[source]
+----
+$ gwws --dry-run
+Would switch back to the base branches:
+  ../main  feature/main/bug1  ->  main
+  ../7.0.x  feature/7.0.x/bug1  ->  7.0.x
+Done: 2 would switch, 0 skipped
+
+$ gwws
+Skipped ../7.0.x (feature/7.0.x/bug1: it has uncommitted changes)
+Switched ../main to main
+Done: 1 switched, 1 skipped
+----
+
+== Requirements
+
+* Must be run from within a git repository
+* Git worktree support (Git 2.5+)
+
+== See also
+
+* link:../git-branches/merge-forward[git-branches-merge-forward] - Makes the feature branches with `--feature`
+* link:../git-worktrees-create[git-worktrees-create] - Create git worktrees for all version branches

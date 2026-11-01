@@ -163,7 +163,7 @@ Dry run: nothing was changed. At the end it would print:
     feature/7.0.x/bug1 feature/main/bug1
 ----
 
-* *Where they are created.* Each feature branch is created in the worktree of its branch (or in the directory you ran from when the branch is checked out nowhere). The worktrees of the branches stay on the feature branches, and the end of the run lists them. The directory you ran from is switched back, as usual.
+* *Where they are created.* Each feature branch is created in the worktree of its branch (or in the directory you ran from when the branch is checked out nowhere). The worktrees of the branches stay on the feature branches, and the end of the run lists them (`gwws` switches them all back at once). The directory you ran from is switched back, as usual.
 * *Starting on the first feature branch.* If you are already on `feature/7.0.x/bug1` it is the start: it is not created again, and the work on it is what gets merged forward. Any other feature branch that already exists is a problem.
 * *Merge messages.* They use the branch names, `Merge branch '7.0.x' into 'main'`, never the feature names.
 * *Upstreams.* The feature branches are created without an upstream. The push commands that are printed use `-u`, so the upstream is the remote you push to: your fork for non-embargoed branches (`--fork-remote`, by default your GitHub login), and the upstream remote of the branch (`commercial`) for the embargoed ones. Nothing is pushed.
@@ -256,6 +256,7 @@ DEBUG=1 git-branches/merge-forward/test/test.sh    # also print the output of ev
 * link:../pull[git-branches-pull] - Fast-forward the branches that are behind, run it before merging
 * link:../release[git-branches-release] - Rebuild `release/<version>` branches once the merge is pushed
 * link:../../git-worktrees-create[git-worktrees-create] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
+* link:../../git-worktrees-switch[git-worktrees-switch] - Switches all the worktrees left on feature branches back to their branches in one step (`gwws`), and onto the feature branches again
 * link:../../gh-prs[gh-prs] - Pushes the feature branches made by `--feature` and opens a pull request for each
 * link:../../gmo[gmo] - Records a single merge with `git merge -s ours` and an editable message
 * link:../../../spring-merge-tutorial[spring-merge-tutorial] - Describes the embargoed branch merges the `--embargoed` plan follows
