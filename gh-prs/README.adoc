@@ -1,0 +1,120 @@
+= gh-prs
+
+A zsh plugin that pushes the feature branches made by link:../git-branches/merge-forward[git-branches-merge-forward] `--feature` and opens one pull request for each, with the defaults of the Spring Security forward merges. Run it again to update the pull requests.
+
+== Features
+
+* `gh-prs create` pushes `feature/<branch>/FEATURE` for every branch and creates a pull request into `<branch>`, oldest branch first
+* The first pull request is the change itself, the others are forward merges that link to it
+* OSS branches go to your fork (the remote named after your GitHub login) when it exists, otherwise to the `oss` remote. Embargoed branches *must* go to the `commercial` remote, and the command fails when it does not exist
+* Running it again updates the open pull requests (`gh pr edit`) instead of creating new ones
+* A label that does not exist in a repository is created after asking, with the color and description it has in the other repository, or the color of its kind in spring-security (`in:` e8f9de, `type:` e3d9fc, `status:` fef2c0, `for:` c5def5, `theme:` F9D0C4)
+* Everything is validated before anything is pushed, and all problems are reported together
+* `--dry-run` prints the plan and changes nothing
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins gh-prs
+----
+
+Or manually by adding the plugin directory to your `PATH`. The plugin defines the alias `ghppr` for `gh-prs`.
+
+== Usage
+
+[source,bash]
+----
+gh-prs create [OPTIONS] [FEATURE]
+----
+
+`FEATURE` is the name in `feature/<branch>/FEATURE`. It defaults to the name of the branch you are on, so after `gbbmf --feature bug1 7.0.x 7.1.x main` run `gh-prs create` from any of the feature branches.
+
+=== Defaults
+
+[%header,cols="1,3"]
+|===
+| | Default
+| Title | First PR: the subject of the commit on the first feature branch. The others: `Merge <title of the first PR>`
+| Body | First PR: the description of the commit. The others: `Forward merge of gh-N`, where `N` is the number of the first PR (`<owner>/<repo>#N` when the first PR is in another repository, as for embargoed branches)
+| Assignee | `@me`
+| Labels | `status: forward-port` on every PR except the first
+| Milestone | The `version=` of `gradle.properties` on the base branch without `-SNAPSHOT` (`7.0.9-SNAPSHOT` is `7.0.9`). It must exist and be open in the repository, `gh-milestones create` makes it
+|===
+
+Pull requests into `embargoed/frozen/<generation>` and `embargoed/active/<generation>` (the commercial repository) differ, because their milestone is already on the OSS pull request:
+
+[%header,cols="1,3"]
+|===
+| | Default
+| Milestone | None. An explicit `--milestone` is still applied, and a re-run does not clear it
+| Title | `Merge <title of the first PR> into <base branch>`, so that the many similar pull requests can be told apart
+| Body | `Merge of <PR> into <base branch>`. For `embargoed/frozen/G` the PR is the OSS pull request of the same generation (`spring-projects/spring-security#N`), for `embargoed/active/G` the frozen pull request of that generation (`#N`)
+|===
+
+A chain of embargoed branches only (the first pull request is then an embargoed one) keeps the milestone of that first pull request.
+
+The titles are derived again on every run from the first title, so `--title` on a later run changes all of them.
+If no `in: *` or `type: *` label is given (and no existing pull request has one), the command lists the labels of that kind of each repository and asks which to add, Enter adds none. `--yes` skips the question, and without a terminal it continues without them.
+
+=== Options
+
+[%header,cols="2,6"]
+|===
+| Option | Description
+| `--title TEXT` | Title of the first PR, the others follow from it
+| `--body TEXT` | Body of the first PR
+| `--label LABEL` | Add a label to every PR, may be repeated
+| `--assignee USER` | Assignee of every PR instead of `@me`, may be repeated
+| `--reviewer USER` | Request a review on every PR, may be repeated
+| `--milestone TITLE` | Milestone of every PR instead of the one of each base branch
+| `--draft` | Create the PRs as drafts (existing PRs are not changed)
+| `--no-forward-label` | Do not add `status: forward-port`
+| `--yes`, `-y` | Do not ask for `in:` and `type:` labels, and create missing labels without asking
+| `--oss-repo`, `--commercial-repo` | The repositories (default: the `oss`, `origin` and `commercial` remotes, as in link:../gh-milestones[gh-milestones])
+| `--dry-run`, `-n` | Print what would be pushed and run, change nothing
+|===
+
+=== Output
+
+[source,text]
+----
+$ gh-prs create --dry-run --yes
+Repositories: spring-projects/spring-security (remote oss), spring-projects/spring-security-commercial (remote commercial)
+Push remotes: OSS branches -> rwinch (your fork), embargoed branches -> commercial
+
+Pull requests for feature 'bug1' (oldest first):
+  (1) feature/7.0.x/bug1  ->  7.0.x   spring-projects/spring-security   create
+        push:      git push -u rwinch feature/7.0.x/bug1
+        head:      rwinch:feature/7.0.x/bug1
+        title:     Fix CookieRequestCache parameters
+        body:      Longer description of the fix.
+        assignee:  @me   milestone: 7.0.9   labels: (none)
+  (2) feature/main/bug1  ->  main   spring-projects/spring-security   create
+        title:     Merge Fix CookieRequestCache parameters
+        body:      Forward merge of gh-<number of PR 1>
+        assignee:  @me   milestone: 7.2.0   labels: status: forward-port
+...
+----
+
+== Notes
+
+* The OSS pull request build skips pull requests from forks, so pushing to the fork gives pull requests without that build.
+* `git push -u` sets the upstream of each feature branch to the remote it was pushed to.
+* A merged or closed pull request for a branch is reported as a problem. Nothing is ever merged, and labels are only added, never removed.
+
+== Tests
+
+[source,bash]
+----
+gh-prs/test/test.sh            # all tests
+gh-prs/test/test.sh labels     # tests whose name contains "labels"
+DEBUG=1 gh-prs/test/test.sh    # also print the output of every run
+----
+
+The tests put a stub `gh` first on the `PATH` and use throwaway repositories, so nothing is created on GitHub.
+
+== Requirements
+
+* `gh`, authenticated, and git
+* A git repository with the feature branches

@@ -31,6 +31,7 @@ antigen bundle rwinch/zsh-plugins copy
 antigen bundle rwinch/zsh-plugins gh-block-embargoed-branches
 antigen bundle rwinch/zsh-plugins gh-create-subissue
 antigen bundle rwinch/zsh-plugins gh-milestones
+antigen bundle rwinch/zsh-plugins gh-prs
 antigen bundle rwinch/zsh-plugins gh-update
 antigen bundle rwinch/zsh-plugins get-security-module-names
 antigen bundle rwinch/zsh-plugins git-recent

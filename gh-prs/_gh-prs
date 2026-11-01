@@ -1,0 +1,35 @@
+#compdef gh-prs ghppr
+
+_gh-prs-features() {
+	local -a features
+	features=(${(u)${${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads/feature 2>/dev/null)"}##*/}})
+	_wanted features expl 'feature' compadd -a features
+}
+
+_gh-prs() {
+	if (( CURRENT == 2 )) && [[ $words[2] != -* ]]; then
+		local -a subcmds
+		subcmds=('create:push the feature branches and create or update their pull requests')
+		_describe -t commands 'gh-prs command' subcmds
+		return
+	fi
+
+	_arguments -s -S \
+		'--title[title of the first pull request]:title:' \
+		'--body[body of the first pull request]:body:' \
+		'*--label[add a label to every pull request]:label:' \
+		'*--assignee[assignee of every pull request (default @me)]:user:' \
+		'*--reviewer[request a review from a user]:user:' \
+		'--milestone[milestone of every pull request]:milestone:' \
+		'--draft[create the pull requests as drafts]' \
+		'--no-forward-label[do not add the status: forward-port label]' \
+		'(-y --yes)'{-y,--yes}'[do not ask for in: and type: labels]' \
+		'--oss-repo[OSS repository]:repository (ORG/NAME):' \
+		'--commercial-repo[commercial repository]:repository (ORG/NAME):' \
+		'(-n --dry-run)'{-n,--dry-run}'[print what would be pushed and run, change nothing]' \
+		'(-h --help)'{-h,--help}'[show this help message]' \
+		'1:command:(create)' \
+		'2::feature:_gh-prs-features'
+}
+
+_gh-prs "$@"

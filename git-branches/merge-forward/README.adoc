@@ -256,5 +256,6 @@ DEBUG=1 git-branches/merge-forward/test/test.sh    # also print the output of ev
 * link:../pull[git-branches-pull] - Fast-forward the branches that are behind, run it before merging
 * link:../release[git-branches-release] - Rebuild `release/<version>` branches once the merge is pushed
 * link:../../git-worktrees-create[git-worktrees-create] - Create git worktrees for all version branches, useful for setting up the worktrees this plugin operates across
+* link:../../gh-prs[gh-prs] - Pushes the feature branches made by `--feature` and opens a pull request for each
 * link:../../gmo[gmo] - Records a single merge with `git merge -s ours` and an editable message
 * link:../../../spring-merge-tutorial[spring-merge-tutorial] - Describes the embargoed branch merges the `--embargoed` plan follows

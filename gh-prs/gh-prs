@@ -1,0 +1,784 @@
+#!/bin/zsh
+
+# ---- options ----
+dry_run=0                # --dry-run
+yes=0                    # --yes
+no_forward_label=0       # --no-forward-label
+draft=0                  # --draft
+title_arg=""             # --title
+body_arg=""              # --body
+body_given=0
+milestone_arg=""         # --milestone
+oss_repo_arg=""          # --oss-repo
+commercial_repo_arg=""   # --commercial-repo
+typeset -a assignees reviewers user_labels
+subcommand=""
+feature=""
+
+# ---- the feature branches, oldest first, and one entry per pull request ----
+typeset -a twins
+typeset -a pr_branch pr_base pr_repo pr_remote pr_head pr_milestone pr_title pr_body
+typeset -a pr_labels pr_num pr_url pr_exists pr_action pr_source
+typeset -A idx_of_base        # base branch -> index of its pull request
+
+typeset -A repo_label_cache   # repo -> labels as name<TAB>color<TAB>description, one per line
+typeset -A missing_labels     # repo -> labels that do not exist there, one per line
+typeset -A repo_milestones    # repo -> open milestone titles, one per line
+typeset -A extra_labels       # repo -> labels picked at the prompt, one per line
+typeset -A repo_prompt        # repo -> 1 when the in:/type: prompt is needed
+typeset -a problems
+
+oss_repo=""
+commercial_repo=""
+oss_source=""
+commercial_source=""
+login=""
+fork_remote=""
+first_title=""
+first_num=""
+first_repo=""
+nl=$'\n'
+
+usage() {
+	cat <<'USAGE'
+Usage: gh-prs create [OPTIONS] [FEATURE]
+
+Push the feature branches feature/<branch>/FEATURE (made by git-branches-merge-forward
+--feature) and open one pull request for each, or update the ones that are already open.
+Run it again after changing options or the branches to update the pull requests.
+FEATURE defaults to the name of the current branch (feature/<branch>/<name>).
+
+The pull requests are made oldest branch first. The first one is the original change, the
+others are forward merges that link to it. Nothing is merged.
+
+PUSHING:
+  OSS branches        to the remote named after your GitHub login (your fork) if it
+                      exists, otherwise to the 'oss' remote
+  embargoed branches  to the 'commercial' remote, which must exist (nothing else is
+                      ever used)
+
+DEFAULTS (every one can be given as an option):
+  title      first PR: subject of the commit; the others: 'Merge <title of the first PR>'
+  body       first PR: description of the commit; the others: 'Forward merge of gh-N'
+             (N is the number of the first PR, owner/repo#N when it is in another repo)
+  assignee   @me
+  labels     'status: forward-port' on every PR except the first
+  milestone  the version= of gradle.properties on the base branch, without -SNAPSHOT
+             (it must exist and be open in the repository)
+  embargoed  the PRs into embargoed/frozen/G and embargoed/active/G have no milestone (the
+             OSS PR has it), the title is 'Merge <title> into <branch>' and the body
+             'Merge of <PR> into <branch>': the OSS PR of the generation for frozen, the
+             frozen PR for active
+  If no 'in: *' or 'type: *' label is given (and no existing PR has one) you are asked
+  which of these labels of the repository to add (Enter = none). --yes skips the question.
+  A label that does not exist in the repository is created after asking, with the color
+  and description it has in the other repository, or the color of its kind as in
+  spring-security (in: e8f9de, type: e3d9fc, status: fef2c0, for: c5def5, theme: F9D0C4).
+
+OPTIONS:
+  --title TEXT          Title of the first PR (the other titles are derived from it)
+  --body TEXT           Body of the first PR
+  --label LABEL         Add a label to every PR, may be repeated
+  --assignee USER       Assignee of every PR (default @me), may be repeated
+  --reviewer USER       Request a review from USER on every PR, may be repeated
+  --milestone TITLE     Milestone of every PR (instead of the one of each base branch)
+  --draft               Create the PRs as drafts (existing PRs are not changed)
+  --no-forward-label    Do not add 'status: forward-port'
+  --yes, -y             Do not ask for in:/type: labels, and create missing labels without asking
+  --oss-repo ORG/NAME   OSS repository (default: 'oss' remote, then 'origin')
+  --commercial-repo ORG/NAME
+                        Commercial repository (default: 'commercial' remote, then the
+                        OSS name + '-commercial')
+  --dry-run, -n         Validate and print what would be pushed and run. Nothing changes.
+  --help, -h            Show this help
+
+EXAMPLES:
+  gh-prs create --dry-run
+  gh-prs create
+  gh-prs create bug1 --label 'in: web' --label 'type: bug'
+  gh-prs create --title 'Fix CookieRequestCache parameters'    # on a re-run: updates
+
+REQUIREMENTS:
+  - The gh CLI, authenticated, and git
+  - Run inside a git repository that has the feature branches
+USAGE
+}
+
+usage_error() {
+	echo "Error: $1" >&2
+	echo "Run 'gh-prs --help' for usage." >&2
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Problem collection
+# ---------------------------------------------------------------------------
+problem() {
+	problems+=("$1")
+}
+
+print_problem() {
+	local p="$1" first=1 l
+	for l in "${(@f)p}"; do
+		if (( first )); then
+			echo "  - $l" >&2
+			first=0
+		else
+			echo "      $l" >&2
+		fi
+	done
+}
+
+fail_if_problems() {
+	[[ ${#problems[@]} -eq 0 ]] && return 0
+	local p
+	echo "Error: ${#problems[@]} problem(s) found. Nothing was pushed or created:" >&2
+	for p in "${problems[@]}"; do
+		print_problem "$p"
+	done
+	exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Repositories (the same rules as gh-milestones)
+# ---------------------------------------------------------------------------
+# Prints org/name for a git remote, nothing (and fails) if it does not exist.
+remote_repo() {
+	local url
+	url=$(git config --get "remote.$1.url" 2>/dev/null) || return 1
+	url=${url%/}
+	url=${url%.git}
+	local name=${url##*[:/]}
+	local rest=${url%/*}
+	local org=${rest##*[:/]}
+	[[ -n "$org" && -n "$name" ]] || return 1
+	echo "$org/$name"
+}
+
+resolve_repos() {
+	local r
+	if [[ -n "$oss_repo_arg" ]]; then
+		oss_repo=$oss_repo_arg; oss_source="--oss-repo"
+	elif r=$(remote_repo oss); then
+		oss_repo=$r; oss_source="remote oss"
+	elif r=$(remote_repo origin); then
+		oss_repo=$r; oss_source="remote origin"
+	fi
+
+	if [[ -n "$commercial_repo_arg" ]]; then
+		commercial_repo=$commercial_repo_arg; commercial_source="--commercial-repo"
+	elif [[ -n "$oss_repo_arg" && -n "$oss_repo" ]]; then
+		commercial_repo="${oss_repo}-commercial"; commercial_source="--oss-repo + -commercial"
+	elif r=$(remote_repo commercial); then
+		commercial_repo=$r; commercial_source="remote commercial"
+	elif [[ -n "$oss_repo" ]]; then
+		commercial_repo="${oss_repo}-commercial"; commercial_source="oss repository + -commercial"
+	fi
+}
+
+is_embargoed_branch() {
+	[[ "$1" == embargoed/* ]]
+}
+
+remote_exists() {
+	git remote get-url "$1" > /dev/null 2>&1
+}
+
+# ---------------------------------------------------------------------------
+# Lookups (cached per repository)
+# ---------------------------------------------------------------------------
+# name<TAB>color<TAB>description of every label of a repository
+repo_label_meta() {
+	local repo="$1"
+	if (( ! ${+repo_label_cache[$repo]} )); then
+		repo_label_cache[$repo]=$(gh label list -R "$repo" --limit 500 --json name,color,description \
+			--jq '.[] | [.name, .color, (.description // "")] | @tsv' 2>/dev/null)
+	fi
+	print -r -- "${repo_label_cache[$repo]}"
+}
+
+repo_labels() {
+	repo_label_meta "$1" | cut -f1
+}
+
+# The color of a kind of label in spring-security.
+kind_color() {
+	case "${1%%:*}" in
+		in) echo e8f9de ;;
+		type) echo e3d9fc ;;
+		status) echo fef2c0 ;;
+		for) echo c5def5 ;;
+		theme) echo F9D0C4 ;;
+		*) echo ededed ;;
+	esac
+}
+
+# Prints color<TAB>description for a label to create in `repo`: what it has in the other
+# repository when it exists there, otherwise the color of its kind and no description.
+label_convention() {
+	local name="$1" repo="$2" other line
+	local -a f
+	for other in "$oss_repo" "$commercial_repo"; do
+		[[ -z "$other" || "$other" == "$repo" ]] && continue
+		for line in "${(@f)$(repo_label_meta "$other")}"; do
+			f=("${(@ps:\t:)line}")
+			if [[ "${f[1]}" == "$name" ]]; then
+				printf '%s\t%s\n' "${f[2]}" "${f[3]}"
+				return 0
+			fi
+		done
+	done
+	printf '%s\t\n' "$(kind_color "$name")"
+}
+
+repo_open_milestones() {
+	local repo="$1"
+	if (( ! ${+repo_milestones[$repo]} )); then
+		repo_milestones[$repo]=$(gh api --paginate "repos/$repo/milestones?state=open&per_page=100" --jq '.[].title' 2>/dev/null)
+	fi
+	print -r -- "${repo_milestones[$repo]}"
+}
+
+has_line() {
+	local needle="$1" text="$2" l
+	for l in "${(@f)text}"; do
+		[[ "$l" == "$needle" ]] && return 0
+	done
+	return 1
+}
+
+# version= of gradle.properties on a branch, without -SNAPSHOT
+base_milestone() {
+	local v
+	v=$(git show "refs/heads/${1}:gradle.properties" 2>/dev/null | sed -n 's/^version=//p' | head -1 | tr -d '\r ')
+	[[ -n "$v" ]] || return 1
+	print -r -- "${v%-SNAPSHOT}"
+}
+
+# Sets found_* to the PR of a head branch and base in repo (found_num empty when there is none).
+find_pr() {
+	local repo="$1" branch="$2" base="$3" expected_owner="$4" out line
+	local -a f
+	found_num=""; found_state=""; found_url=""; found_labels=""
+	out=$(gh pr list -R "$repo" --head "$branch" --base "$base" --state all \
+		--json number,state,url,title,headRepositoryOwner,labels \
+		--jq '.[] | [.number, .state, .url, .title, .headRepositoryOwner.login, ([.labels[].name] | join("|"))] | @tsv') || return 1
+	for line in "${(@f)out}"; do
+		[[ -z "$line" ]] && continue
+		f=("${(@ps:\t:)line}")
+		[[ "${f[5]:l}" == "${expected_owner:l}" ]] || continue
+		found_num="${f[1]}"; found_state="${f[2]}"; found_url="${f[3]}"; found_labels="${f[6]}"
+		return 0
+	done
+	return 0
+}
+
+# ---------------------------------------------------------------------------
+# Interactive
+# ---------------------------------------------------------------------------
+# Reads a line from the terminal (GH_PRS_TTY replaces /dev/tty, for tests). Fails without one.
+tty_fd=""
+read_tty() {
+	local tty="${GH_PRS_TTY:-/dev/tty}"
+	REPLY_TTY=""
+	if [[ -z "$tty_fd" ]]; then
+		( : < "$tty" ) 2>/dev/null || return 1
+		exec {tty_fd}< "$tty"
+	fi
+	read -r -u $tty_fd REPLY_TTY
+}
+
+# Asks which in:/type: labels of `repo` to add; sets extra_labels[repo].
+prompt_labels() {
+	local repo="$1" i n
+	local -a cands picked
+	cands=("${(@f)$(repo_labels "$repo" | grep -E '^(in|type): ')}")
+	cands=("${(@)cands:#}")
+	if (( ${#cands} == 0 )); then
+		echo "No 'in: *' or 'type: *' labels found in $repo, continuing without." >&2
+		return 0
+	fi
+	echo ""
+	echo "No 'in: *' or 'type: *' label was given. Labels of $repo:"
+	for (( i = 1; i <= ${#cands}; i++ )); do
+		printf '  %2d) %s\n' "$i" "${cands[$i]}"
+	done
+	printf "Add which labels to the %s pull requests? (numbers, comma separated, Enter = none): " "$repo"
+	if ! read_tty; then
+		echo ""
+		echo "No terminal to ask, continuing without in:/type: labels (see --label and --yes)." >&2
+		return 0
+	fi
+	for n in ${(s:,:)${REPLY_TTY// /,}}; do
+		[[ -z "$n" ]] && continue
+		if [[ "$n" != <-> ]] || (( n < 1 || n > ${#cands} )); then
+			echo "Error: '$n' is not one of the numbers above." >&2
+			exit 1
+		fi
+		picked+=("${cands[$n]}")
+	done
+	extra_labels[$repo]="${(F)picked}"
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+value_of() {
+	[[ $2 -ge 2 && -n "$4" ]] || usage_error "$1 requires a value"
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--dry-run|-n) dry_run=1; shift ;;
+		--yes|-y) yes=1; shift ;;
+		--no-forward-label) no_forward_label=1; shift ;;
+		--draft) draft=1; shift ;;
+		--title) value_of "$1" $# "" "$2"; title_arg="$2"; shift 2 ;;
+		--body) [[ $# -ge 2 ]] || usage_error "--body requires a value"; body_arg="$2"; body_given=1; shift 2 ;;
+		--label) value_of "$1" $# "" "$2"; user_labels+=("$2"); shift 2 ;;
+		--assignee) value_of "$1" $# "" "$2"; assignees+=("$2"); shift 2 ;;
+		--reviewer) value_of "$1" $# "" "$2"; reviewers+=("$2"); shift 2 ;;
+		--milestone) value_of "$1" $# "" "$2"; milestone_arg="$2"; shift 2 ;;
+		--oss-repo) value_of "$1" $# "" "$2"; oss_repo_arg="$2"; shift 2 ;;
+		--commercial-repo) value_of "$1" $# "" "$2"; commercial_repo_arg="$2"; shift 2 ;;
+		--help|-h) usage; exit 0 ;;
+		-*) usage_error "Unknown option: $1" ;;
+		*)
+			if [[ -z "$subcommand" ]]; then
+				subcommand="$1"
+			elif [[ -z "$feature" ]]; then
+				feature="$1"
+			else
+				usage_error "Unexpected argument: $1"
+			fi
+			shift ;;
+	esac
+done
+
+[[ -n "$subcommand" ]] || usage_error "A command is required (create)"
+[[ "$subcommand" == create ]] || usage_error "Unknown command: $subcommand (only create exists)"
+(( ${#assignees} )) || assignees=(@me)
+
+command -v gh >/dev/null 2>&1 || { echo "Error: the gh CLI is not installed" >&2; exit 1; }
+git rev-parse --git-dir > /dev/null 2>&1 || { echo "Error: Not in a git repository" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# The feature branches
+# ---------------------------------------------------------------------------
+if [[ -z "$feature" ]]; then
+	current=$(git branch --show-current 2>/dev/null)
+	if [[ "$current" == feature/*/* ]]; then
+		feature="${current##*/}"
+	else
+		usage_error "No FEATURE given and the current branch '${current:-(detached)}' is not a feature/<branch>/<name> branch"
+	fi
+fi
+[[ "$feature" != */* ]] || usage_error "The FEATURE name must not contain '/' (got '$feature')"
+
+typeset -a found_branches
+for b in "${(@f)$(git for-each-ref --format='%(refname:short)' refs/heads/feature/)}"; do
+	[[ "$b" == feature/*/$feature ]] && found_branches+=("$b")
+done
+(( ${#found_branches} )) || { echo "Error: no branches named feature/<branch>/$feature" >&2; exit 1; }
+
+# oldest first: the more feature branches contain a branch, the earlier it comes
+typeset -a ranked
+for b in "${found_branches[@]}"; do
+	n=0
+	for o in "${found_branches[@]}"; do
+		[[ "$o" == "$b" ]] && continue
+		git merge-base --is-ancestor "refs/heads/$b" "refs/heads/$o" && (( n++ ))
+	done
+	# a branch that is the same commit as another one (nothing of its own) is ordered by its role:
+	# OSS, then frozen, then active
+	case "${${b#feature/}%/$feature}" in
+		embargoed/frozen/*) rank=1 ;;
+		embargoed/active/*) rank=2 ;;
+		*) rank=0 ;;
+	esac
+	ranked+=("$(printf '%03d\t%d\t%s' $(( 999 - n )) "$rank" "$b")")
+done
+for line in "${(@f)$(print -r -- "${(F)ranked}" | sort)}"; do
+	twins+=("${line##*$'\t'}")
+done
+
+# ---------------------------------------------------------------------------
+# The plan
+# ---------------------------------------------------------------------------
+resolve_repos
+
+login=$(gh api user --jq .login 2>/dev/null)
+[[ -n "$login" ]] || problem "could not get your GitHub login from 'gh api user' (is gh authenticated? gh auth login)"
+[[ -n "$login" ]] && remote_exists "$login" && fork_remote="$login"
+
+need_oss=0; need_commercial=0
+for b in "${twins[@]}"; do
+	base="${${b#feature/}%/$feature}"
+	if is_embargoed_branch "$base"; then need_commercial=1; else need_oss=1; fi
+done
+if (( need_oss )) && [[ -z "$oss_repo" ]]; then
+	problem "could not determine the OSS repository (no oss or origin remote)${nl}use --oss-repo ORG/NAME"
+fi
+if (( need_commercial )) && [[ -z "$commercial_repo" ]]; then
+	problem "could not determine the commercial repository${nl}use --commercial-repo ORG/NAME"
+fi
+
+i=0
+for b in "${twins[@]}"; do
+	(( i++ ))
+	idx_of_base[${${b#feature/}%/$feature}]=$i
+done
+
+i=0
+for b in "${twins[@]}"; do
+	(( i++ ))
+	base="${${b#feature/}%/$feature}"
+	pr_branch[$i]="$b"
+	pr_base[$i]="$base"
+
+	# The PR that brings the change into an embargoed branch: the OSS PR of its generation for
+	# frozen, the frozen PR of its generation for active. Such a PR gets no milestone: the OSS one has it.
+	pr_source[$i]=0
+	case "$base" in
+		embargoed/frozen/*) j="${idx_of_base[${base#embargoed/frozen/}]:-0}" ;;
+		embargoed/active/*) j="${idx_of_base[embargoed/frozen/${base#embargoed/active/}]:-0}" ;;
+		*) j=0 ;;
+	esac
+	(( i > 1 && j > 0 && j < i )) && pr_source[$i]=$j
+
+	if is_embargoed_branch "$base"; then
+		pr_repo[$i]="$commercial_repo"
+		if remote_exists commercial; then
+			pr_remote[$i]=commercial
+		else
+			problem "$b: embargoed branches must be pushed to the 'commercial' remote, which does not exist${nl}git remote add commercial <url of the commercial repository>"
+		fi
+		pr_head[$i]="$b"
+		expected_owner="${commercial_repo%%/*}"
+	else
+		pr_repo[$i]="$oss_repo"
+		if [[ -n "$fork_remote" ]]; then
+			pr_remote[$i]="$fork_remote"
+			pr_head[$i]="$login:$b"
+			expected_owner="$login"
+		elif remote_exists oss; then
+			pr_remote[$i]=oss
+			pr_head[$i]="$b"
+			expected_owner="${oss_repo%%/*}"
+		else
+			problem "$b: no remote to push to: there is no remote named '${login:-<your login>}' (your fork) and no 'oss' remote"
+		fi
+	fi
+
+	if ! git show-ref --verify --quiet "refs/heads/$base"; then
+		problem "$b: the base branch '$base' does not exist locally"
+	fi
+
+	# milestone
+	if [[ -n "$milestone_arg" ]]; then
+		pr_milestone[$i]="$milestone_arg"
+	elif (( pr_source[i] > 0 )); then
+		pr_milestone[$i]=""
+	elif ms=$(base_milestone "$base"); then
+		pr_milestone[$i]="$ms"
+	else
+		problem "$base: no version= in gradle.properties, cannot work out the milestone (use --milestone)"
+	fi
+
+	# the existing pull request
+	pr_num[$i]=""; pr_url[$i]=""; pr_exists[$i]=""
+	if [[ -n "${pr_repo[$i]}" && -n "${pr_remote[$i]}" ]]; then
+		if find_pr "${pr_repo[$i]}" "$b" "$base" "$expected_owner"; then
+			if [[ -n "$found_num" ]]; then
+				if [[ "$found_state" == OPEN ]]; then
+					pr_num[$i]="$found_num"; pr_url[$i]="$found_url"; pr_exists[$i]="$found_labels"
+				else
+					problem "$b: pull request #$found_num ($found_url) is ${found_state:l}, it cannot be updated"
+				fi
+			fi
+		else
+			problem "$b: could not look up the pull requests of ${pr_repo[$i]} (gh pr list failed)"
+		fi
+	fi
+done
+
+# titles and bodies: the first PR from the commit (or the options), the others from the first
+first_branch="${pr_branch[1]}"
+first_base="${pr_base[1]}"
+first_repo="${pr_repo[1]}"
+typeset -a commits
+commits=("${(@f)$(git log --no-merges --format=%H "refs/heads/$first_base..refs/heads/$first_branch" 2>/dev/null)}")
+commits=("${(@)commits:#}")
+tip_commit="${commits[1]}"
+if [[ -z "$tip_commit" && ( -z "$title_arg" || $body_given -eq 0 ) ]]; then
+	if [[ -z "$title_arg" ]]; then
+		problem "$first_branch: no commits on top of $first_base to take the title from (commit the change, or use --title)"
+	fi
+fi
+ncommits=${#commits}
+if [[ -n "$tip_commit" ]]; then
+	first_title="${title_arg:-$(git log -1 --format=%s "$tip_commit")}"
+	if (( body_given )); then
+		first_body="$body_arg"
+	else
+		first_body="$(git log -1 --format=%b "$tip_commit")"
+	fi
+else
+	first_title="$title_arg"
+	first_body="$body_arg"
+fi
+(( ncommits > 1 )) && echo "Note: $first_branch has $ncommits commits on top of $first_base, the title and body come from the last one (${tip_commit[1,10]})." >&2
+
+first_num="${pr_num[1]}"
+
+# labels
+for (( i = 1; i <= ${#twins}; i++ )); do
+	lbls=("${user_labels[@]}")
+	(( i > 1 && ! no_forward_label )) && lbls+=("status: forward-port")
+	pr_labels[$i]="${(F)lbls}"
+done
+
+# milestones and labels have to exist in each repository
+typeset -A seen_repo
+for (( i = 1; i <= ${#twins}; i++ )); do
+	r="${pr_repo[$i]}"
+	[[ -z "$r" ]] && continue
+	if [[ -n "${pr_milestone[$i]}" ]] && ! has_line "${pr_milestone[$i]}" "$(repo_open_milestones "$r")"; then
+		problem "${pr_branch[$i]}: milestone '${pr_milestone[$i]}' does not exist (open) in $r${nl}gh-milestones create --oss|--commercial ${pr_milestone[$i]} --due YYYY-MM-DD"
+	fi
+	for l in "${(@f)pr_labels[$i]}"; do
+		[[ -z "$l" ]] && continue
+		if ! has_line "$l" "$(repo_labels "$r")" && ! has_line "$l" "${missing_labels[$r]}"; then
+			missing_labels[$r]="${missing_labels[$r]:+${missing_labels[$r]}$nl}$l"
+		fi
+	done
+	seen_repo[$r]=1
+done
+fail_if_problems
+
+# Labels that do not exist: shown with the color and description they would get
+describe_missing_labels() {
+	local r="$1" l conv
+	for l in "${(@f)missing_labels[$r]}"; do
+		conv=$(label_convention "$l" "$r")
+		printf '  %s   color %s%s\n' "$l" "${conv%%$'\t'*}" "${${conv#*$'\t'}:+, ${conv#*$'\t'}}"
+	done
+}
+
+# Creates the missing labels of `repo` (asks first, unless --yes). Fails when they are not created.
+create_missing_labels() {
+	local r="$1" l conv color description answer
+	echo ""
+	echo "These labels do not exist in $r:"
+	describe_missing_labels "$r"
+	if (( ! yes )); then
+		printf "Create them in %s? [y/N]: " "$r"
+		if ! read_tty; then
+			echo ""
+			echo "Error: no terminal to ask. Create the labels (gh label create ... -R $r), or run again with --yes." >&2
+			exit 1
+		fi
+		if [[ "$REPLY_TTY" != (y|Y|yes|YES) ]]; then
+			echo "Error: the labels are needed. Create them (gh label create ... -R $r), or use another --label." >&2
+			exit 1
+		fi
+	fi
+	for l in "${(@f)missing_labels[$r]}"; do
+		conv=$(label_convention "$l" "$r")
+		color="${conv%%$'\t'*}"
+		description="${conv#*$'\t'}"
+		if ! out=$(gh label create "$l" -R "$r" --color "$color" --description "$description" 2>&1); then
+			echo "Error: creating the label '$l' in $r failed:" >&2
+			echo "$out" >&2
+			exit 1
+		fi
+		echo "  created label '$l' in $r"
+		repo_label_cache[$r]="${repo_label_cache[$r]}${nl}$(printf '%s\t%s\t%s' "$l" "$color" "$description")"
+	done
+}
+
+# in:/type: labels: asked once per repository, unless there is one already
+for r in ${(k)seen_repo}; do
+	have=0
+	for l in "${user_labels[@]}"; do
+		[[ "$l" == (in|type):\ * ]] && have=1
+	done
+	for (( i = 1; i <= ${#twins}; i++ )); do
+		[[ "${pr_repo[$i]}" == "$r" && "${pr_exists[$i]}" == *"in: "* ]] && have=1
+		[[ "${pr_repo[$i]}" == "$r" && "${pr_exists[$i]}" == *"type: "* ]] && have=1
+	done
+	(( have )) || repo_prompt[$r]=1
+done
+
+# ---------------------------------------------------------------------------
+# Printing
+# ---------------------------------------------------------------------------
+forward_ref() {
+	local repo="$1"
+	if [[ -z "$first_num" ]]; then
+		echo "gh-<number of PR 1>"
+	elif [[ "$repo" == "$first_repo" ]]; then
+		echo "gh-$first_num"
+	else
+		echo "$first_repo#$first_num"
+	fi
+}
+
+# A reference to the pull request j, written for a PR in `from_repo`.
+pr_ref() {
+	local j="$1" from_repo="$2" n="${pr_num[$1]}"
+	if [[ -z "$n" ]]; then
+		n="<number of PR $j>"
+	fi
+	if [[ "${pr_repo[$j]}" == "$from_repo" ]]; then
+		echo "#$n"
+	else
+		echo "${pr_repo[$j]}#$n"
+	fi
+}
+
+pr_title_of() {
+	if (( $1 == 1 )); then
+		echo "$first_title"
+	elif (( pr_source[$1] > 0 )); then
+		echo "Merge $first_title into ${pr_base[$1]}"
+	else
+		echo "Merge $first_title"
+	fi
+}
+
+pr_body_of() {
+	if (( $1 == 1 )); then
+		echo "$first_body"
+	elif (( pr_source[$1] > 0 )); then
+		echo "Merge of $(pr_ref "${pr_source[$1]}" "${pr_repo[$1]}") into ${pr_base[$1]}"
+	else
+		echo "Forward merge of $(forward_ref "${pr_repo[$1]}")"
+	fi
+}
+
+# The labels of PR i: its own, plus what was picked for its repository.
+all_labels_of() {
+	local -a l
+	l=("${(@f)pr_labels[$1]}" "${(@f)extra_labels[${pr_repo[$1]}]}")
+	l=("${(@)l:#}")
+	print -r -- "${(F)l}"
+}
+
+print_plan() {
+	local i b w=0 action
+	echo "Repositories: ${oss_repo:-(none)}${oss_source:+ ($oss_source)}${commercial_repo:+, $commercial_repo ($commercial_source)}"
+	local push_note=""
+	if (( need_oss )); then
+		if [[ -n "$fork_remote" ]]; then push_note="OSS branches -> $fork_remote (your fork)"; else push_note="OSS branches -> oss"; fi
+	fi
+	(( need_commercial )) && push_note+="${push_note:+, }embargoed branches -> commercial"
+	echo "Push remotes: $push_note"
+	echo ""
+	echo "Pull requests for feature '$feature' (oldest first):"
+	for (( i = 1; i <= ${#twins}; i++ )); do
+		action=create
+		[[ -n "${pr_num[$i]}" ]] && action="update #${pr_num[$i]}"
+		printf '  (%d) %s  ->  %s   %s   %s\n' "$i" "${pr_branch[$i]}" "${pr_base[$i]}" "${pr_repo[$i]}" "$action"
+		echo "        push:      git push -u ${pr_remote[$i]} ${pr_branch[$i]}"
+		echo "        head:      ${pr_head[$i]}"
+		echo "        title:     $(pr_title_of $i)"
+		if (( i == 1 )) && [[ -z "$first_body" ]]; then
+			echo "        body:      (empty)"
+		else
+			body_lines=("${(@f)$(pr_body_of $i)}")
+			echo "        body:      ${body_lines[1]}"
+		fi
+		echo "        assignee:  ${(j:, :)assignees}   milestone: ${pr_milestone[$i]:-(none, same as the OSS PR)}   labels: ${$(all_labels_of $i | paste -sd, - | sed 's/,/, /g'):-(none)}"
+		(( ${#reviewers} )) && echo "        reviewers: ${(j:, :)reviewers}"
+	done
+}
+
+# ---------------------------------------------------------------------------
+# Main flow
+# ---------------------------------------------------------------------------
+if (( dry_run )); then
+	print_plan
+	for r in $oss_repo $commercial_repo; do
+		[[ -n "${missing_labels[$r]}" ]] || continue
+		echo ""
+		echo "These labels do not exist in $r, a real run would ask to create them:"
+		describe_missing_labels "$r"
+	done
+	for r in $oss_repo $commercial_repo; do
+		(( ${+repo_prompt[$r]} )) || continue
+		(( yes )) && continue
+		echo ""
+		echo "Labels: no 'in: *' or 'type: *' label was given, so a real run would ask which of"
+		echo "$r's labels to add (use --label or --yes to skip)."
+	done
+	echo ""
+	echo "Dry run: nothing was pushed or created."
+	exit 0
+fi
+
+for r in $oss_repo $commercial_repo; do
+	[[ -n "${missing_labels[$r]}" ]] && create_missing_labels "$r"
+done
+
+for r in $oss_repo $commercial_repo; do
+	(( ${+repo_prompt[$r]} )) || continue
+	(( yes )) && continue
+	prompt_labels "$r"
+done
+
+print_plan
+echo ""
+echo "Pushing and creating:"
+
+created=0; updated=0
+for (( i = 1; i <= ${#twins}; i++ )); do
+	b="${pr_branch[$i]}"
+	if ! git push -u "${pr_remote[$i]}" "$b" > /dev/null 2>&1; then
+		echo "Error: 'git push -u ${pr_remote[$i]} $b' failed:" >&2
+		git push -u "${pr_remote[$i]}" "$b" >&2
+		echo "Stopped before $b. Fix it and run gh-prs again: the pull requests made so far are updated, not repeated." >&2
+		exit 1
+	fi
+
+	title="$(pr_title_of $i)"
+	body="$(pr_body_of $i)"
+	typeset -a cmd opts
+	opts=(--title "$title" --body "$body")
+	if [[ -n "${pr_num[$i]}" ]]; then
+		for a in "${assignees[@]}"; do opts+=(--add-assignee "$a"); done
+		for l in "${(@f)$(all_labels_of $i)}"; do [[ -n "$l" ]] && opts+=(--add-label "$l"); done
+		for a in "${reviewers[@]}"; do opts+=(--add-reviewer "$a"); done
+		[[ -n "${pr_milestone[$i]}" ]] && opts+=(--milestone "${pr_milestone[$i]}")
+		if ! out=$(gh pr edit "${pr_num[$i]}" -R "${pr_repo[$i]}" "${opts[@]}" 2>&1); then
+			echo "Error: updating pull request #${pr_num[$i]} of ${pr_repo[$i]} failed:" >&2
+			echo "$out" >&2
+			exit 1
+		fi
+		(( updated++ ))
+		echo "  updated  ${pr_url[$i]}   ${pr_base[$i]}"
+	else
+		for a in "${assignees[@]}"; do opts+=(--assignee "$a"); done
+		for l in "${(@f)$(all_labels_of $i)}"; do [[ -n "$l" ]] && opts+=(--label "$l"); done
+		for a in "${reviewers[@]}"; do opts+=(--reviewer "$a"); done
+		[[ -n "${pr_milestone[$i]}" ]] && opts+=(--milestone "${pr_milestone[$i]}")
+		(( draft )) && opts+=(--draft)
+		if ! out=$(gh pr create -R "${pr_repo[$i]}" --base "${pr_base[$i]}" --head "${pr_head[$i]}" "${opts[@]}" 2>&1); then
+			echo "Error: creating the pull request for $b failed:" >&2
+			echo "$out" >&2
+			exit 1
+		fi
+		out_lines=("${(@f)out}")
+		url="${out_lines[-1]}"
+		pr_url[$i]="$url"
+		pr_num[$i]="${url##*/}"
+		(( created++ ))
+		echo "  created  $url   ${pr_base[$i]}"
+	fi
+	if (( i == 1 )); then
+		first_num="${pr_num[1]}"
+	fi
+done
+
+echo ""
+echo "Done! ${#twins} pull request(s): $created created, $updated updated."
