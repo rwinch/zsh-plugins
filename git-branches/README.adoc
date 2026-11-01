@@ -48,7 +48,7 @@ gbbf $(svaob)
 gbbmf $(svaob)
 ----
 
-Functions fill in `$(svaob)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`, `gbbmfa` for `gbbmf` and `gbbeca` for `gbbec` do the same. Except for `gbbeca`, they also add `--embargoed`, so the embargoed branches are included by default, and `--no-embargoed` leaves them out, for example `gbbfa --no-embargoed`.
+Functions fill in `$(svaob)` for you and pass any extra options on: `gbbfa` for `gbbf`, `gbbpla` for `gbbpl`, `gbbpha` for `gbbph`, `gbbrtua` for `gbbrtu` and `gbbcma` for `gbbcm`, `gbbmfa` for `gbbmf` and `gbbeca` for `gbbec` do the same. Except for `gbbeca`, they also add `--embargoed`, so the embargoed branches are included by default, and `--no-embargoed` leaves them out, for example `gbbfa --no-embargoed`. On a branch named `feature/<branch>/<name>`, `gbbmfa` also infers `--feature <name>` and starts the chain at `<branch>`, see link:merge-forward#feature-branches[merge-forward].
 
 [#aliases]
 == Aliases

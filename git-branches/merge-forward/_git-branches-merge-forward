@@ -13,6 +13,8 @@ opts=(
 	'(-a --allow-ahead)'{-a,--allow-ahead}'[let any branch in the chain be ahead of its upstream]'
 	'(-o --ours)'{-o,--ours}'[record across hops with git merge -s ours]'
 	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generation branches, also merge embargoed branches]'
+	'(-f --feature)'{-f,--feature}'[merge feature branches feature/<branch>/FEATURE instead of the branches]:feature name: '
+	'--fork-remote[remote for the feature branches of non-embargoed branches]:remote:_remotes'
 	'(-P --pause)'{-P,--pause}'[stop after each merge so the result can be validated]'
 	'(-h --help)'{-h,--help}'[show this help message]'
 )

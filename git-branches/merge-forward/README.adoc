@@ -13,6 +13,7 @@ It never pushes. At the end it prints the exact `git push --atomic` commands.
 * The arguments are the whole chain: `git branches-merge-forward 7.0.x 7.1.x main` merges `7.0.x` into `7.1.x`, then `7.1.x` into `main`. The current branch has no special role.
 * `--embargoed` treats the arguments as OSS generations and also merges the `embargoed/frozen` and `embargoed/active` branches (down and across)
 * `--ours` records across hops with `git merge -s ours`, for branches that carry their own version or dependency updates
+* `--feature FEATURE` merges feature branches (`feature/7.0.x/FEATURE`, ...) instead of the branches themselves, so the real branches are never touched
 * `--dry-run` validates and prints what would happen, and changes nothing
 * It never fetches or pulls: run link:../fetch[git-branches-fetch] and link:../pull[git-branches-pull] first
 * Everything is validated before anything changes, and all problems are reported together
@@ -38,6 +39,7 @@ gbbmf $(svaob)
 ----
 
 `gbbmfa` does that for you, adds `--embargoed` unless you give `--no-embargoed`, and passes any extra options on, for example `gbbmfa --dry-run`.
+On a feature branch it also works out the feature and the branches itself, see <<feature-branches,Feature branches>>.
 
 == Usage
 
@@ -45,6 +47,7 @@ gbbmf $(svaob)
 ----
 git branches-merge-forward [OPTIONS] BRANCH1 BRANCH2 [BRANCH3 ...]
 git branches-merge-forward [OPTIONS] --embargoed GENERATION [GENERATION ...]
+git branches-merge-forward [OPTIONS] --feature FEATURE BRANCH1 BRANCH2 [BRANCH3 ...]
 ----
 
 === Options
@@ -57,6 +60,8 @@ git branches-merge-forward [OPTIONS] --embargoed GENERATION [GENERATION ...]
 | `--allow-ahead` | `-a` | Let any branch in the chain be ahead of its upstream. Behind and diverged still fail. Useful when resuming an aborted run, and when several branches carry their own unpushed commits.
 | `--ours` | `-o` | Record across hops with `git merge -s ours` (nothing is carried, so there are no conflicts). Down hops stay real merges.
 | `--embargoed` | `-e` | The arguments are OSS generation branches, oldest to newest. One generation is enough.
+| `--feature FEATURE` | `-f` | Merge feature branches instead of the branches. `feature/<branch>/FEATURE` is created from every branch, and the chain is merged between them. See <<feature-branches,Feature branches>>.
+| `--fork-remote REMOTE` | | With `--feature`: the remote the feature branches of non-embargoed branches are pushed to. Default: your GitHub login (from `gh api user`), the name `git-clone-convention` gives your fork.
 | `--pause` | `-P` | After each merge, stop so that the result can be validated, and say which directory to do it in.
 | `--help` | `-h` | Display the help message.
 |===
@@ -125,6 +130,61 @@ git branches-merge-forward --ours --allow-ahead --embargoed 7.0.x 7.1.x main
 
 `--allow-ahead` is needed because `7.1.x` and `main` are ahead of their upstreams. Drop it if those updates are already pushed.
 
+[[feature-branches]]
+== Feature branches (`--feature`)
+
+To merge a fix forward without touching the real branches, use a feature branch per branch:
+
+[source,bash]
+----
+git branches-merge-forward --feature bug1 7.0.x 7.1.x main
+----
+
+For every branch in the chain this creates `feature/<branch>/bug1` from the branch (`feature/7.0.x/bug1` from `7.0.x`, ...), and then merges them forward as usual: the first feature branch is into `feature/7.1.x/bug1`, and so on.
+The first branch is only created, nothing is merged into it, so it is where your fix goes if you are not on it yet.
+
+Embargoed branches get the same name with the whole branch in the middle (`embargoed/frozen/7.0.x` becomes `feature/embargoed/frozen/7.0.x/bug1`), so `--embargoed` works too.
+The name is `feature/<branch>/FEATURE` and not `<branch>/FEATURE` because git cannot have a branch `7.0.x` and a branch `7.0.x/bug1` at the same time.
+`FEATURE` may not contain a `/`.
+
+[source,text]
+----
+$ git branches-merge-forward --dry-run --feature bug1 7.0.x main
+Feature branches (created from their base, no upstream until pushed):
+  feature/7.0.x/bug1  from 7.0.x
+  feature/main/bug1   from main
+
+Plan:
+  (1) feature/7.0.x/bug1 -> feature/main/bug1  across merge would merge
+        dir: /code/spring/main   base upstream: oss/main
+
+Dry run: nothing was changed. At the end it would print:
+  git push --atomic -u rwinch \
+    feature/7.0.x/bug1 feature/main/bug1
+----
+
+* *Where they are created.* Each feature branch is created in the worktree of its branch (or in the directory you ran from when the branch is checked out nowhere). The worktrees of the branches stay on the feature branches, and the end of the run lists them. The directory you ran from is switched back, as usual.
+* *Starting on the first feature branch.* If you are already on `feature/7.0.x/bug1` it is the start: it is not created again, and the work on it is what gets merged forward. Any other feature branch that already exists is a problem.
+* *Merge messages.* They use the branch names, `Merge branch '7.0.x' into 'main'`, never the feature names.
+* *Upstreams.* The feature branches are created without an upstream. The push commands that are printed use `-u`, so the upstream is the remote you push to: your fork for non-embargoed branches (`--fork-remote`, by default your GitHub login), and the upstream remote of the branch (`commercial`) for the embargoed ones. Nothing is pushed.
+* *Validation.* The branches are validated as usual (clean worktrees, up to date with their upstreams). The first branch may be ahead, and the feature branches then carry those commits. A feature branch whose name is taken, or collides with a branch that is also a directory in the name (a branch called `feature`), is reported with the other problems.
+* `--ours`, `--pause` and `--dry-run` work as before.
+
+=== `gbbmfa` on a feature branch
+
+`gbbmfa` works out the feature and the chain from the branch you are on. On `feature/7.0.x/bug1` it runs the OSS branches from `7.0.x` onwards (with the embargoed ones, unless `--no-embargoed`) with `--feature bug1`:
+
+[source,bash]
+----
+git switch feature/7.0.x/bug1
+gbbmfa            # same as: gbbmf --feature bug1 --embargoed 7.0.x 7.1.x main
+----
+
+On `feature/7.1.x/bug1` it starts at `7.1.x`, so `7.0.x` and its embargoed branches are left out.
+`gbbmfa --feature NAME` (or `-f NAME`) wins over the name of the branch you are on: the chain is only cut when `NAME` is the name of the current branch, and otherwise the full list is used.
+If the branch in the middle is not an OSS branch (an embargoed one, for example) nothing is inferred, and `gbbmf` with the branches is the way to go.
+`gbbmf` itself never infers anything from the current branch.
+
 == Release branches
 
 Rebuilding `release/<version>` branches is done by link:../release[git-branches-release]. Run it after the merged branches are pushed.
@@ -167,6 +227,9 @@ git branches-merge-forward --embargoed 7.0.x main
 
 # short options
 git branches-merge-forward -n -d 7.0.x main
+
+# merge a fix on feature/7.0.x/bug1 forward through feature branches
+git branches-merge-forward --feature bug1 7.0.x 7.1.x main
 ----
 
 == Tests

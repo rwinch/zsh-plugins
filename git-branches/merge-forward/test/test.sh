@@ -6,6 +6,7 @@
 # Usage: test/test.sh [name-filter]
 
 SCRIPT="${0:A:h:h}/git-branches-merge-forward"
+PLUGIN="${0:A:h:h}/merge-forward.plugin.zsh"
 FILTER="$1"
 pass=0
 fail=0
@@ -45,6 +46,8 @@ setup() {
 		done
 	done
 	git -C $W checkout -q 7.0.x
+	git init -q --bare -b main $R/fork.git
+	git -C $W remote add fork $R/fork.git
 }
 
 # commit FILE on BRANCH in dir DIR (checks the branch out there)
@@ -65,6 +68,22 @@ run() {
 	[[ -n "$DEBUG" ]] && { echo "  \$ git-branches-merge-forward $*  (rc $rc)"; print -r -- "$out" | sed 's/^/    | /' }
 	return 0
 }
+
+# Runs gbbmfa (the plugin function) in the work clone with a fake spring-versions listing the branches in $OSS
+run_a() {
+	set +e
+	mkdir -p $R/bin
+	printf "#!/bin/sh\necho %s\n" "${OSS:-7.0.x main}" > $R/bin/spring-versions
+	chmod +x $R/bin/spring-versions
+	[[ -z "$NOFETCH" ]] && git -C $W fetch -q --all
+	out=$(cd $W && zsh -c "source $PLUGIN; PATH=$R/bin:\$PATH; gbbmfa \"\$@\"" _ "$@" 2>&1)
+	rc=$?
+	set -e
+	[[ -n "$DEBUG" ]] && { echo "  \$ gbbmfa $*  (rc $rc)"; print -r -- "$out" | sed 's/^/    | /' }
+	return 0
+}
+
+has_upstream() { [[ -n "$(git -C $W config branch.$1.remote)" ]] }
 
 expect_rc() { [[ $rc -eq $1 ]] || { echo "    expected rc $1, got $rc"; echo "${out}" | sed 's/^/      | /'; return 1; } }
 expect_out() { print -r -- "$out" | grep -qE -- "$1" || { echo "    expected output to match: $1"; echo "${out}" | sed 's/^/      | /'; return 1; } }
@@ -262,6 +281,185 @@ t "conflict: prompt appears and resume works" '
 	expect_out "Merge conflict merging"
 	expect_out "Merge conflict resolved"
 	expect_out "Done!"
+'
+
+# ---------------------------------------------------------------------------
+# --feature
+t "feature: creates feature/<branch>/FEATURE, merges them, leaves the branches alone" '
+	commit_on $W main extra.txt
+	commit_on $W 7.0.x fix.txt
+	local base70=$(git -C $W rev-parse 7.0.x) basemain=$(git -C $W rev-parse main)
+	run --allow-ahead --feature bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	has_file feature/7.0.x/bug1 fix.txt
+	has_file feature/main/bug1 fix.txt
+	[[ "$(git -C $W rev-parse 7.0.x)" == $base70 && "$(git -C $W rev-parse main)" == $basemain ]]
+	[[ "$(git -C $W log -1 --format=%s feature/main/bug1)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'main'"'"'" ]]
+	contains feature/7.0.x/bug1 feature/main/bug1
+	! has_upstream feature/7.0.x/bug1
+	! has_upstream feature/main/bug1
+	[[ $(branch_of $W) == 7.0.x ]]
+	expect_out "Created: feature/7.0.x/bug1, feature/main/bug1"
+	expect_out "git push --atomic -u fork"
+	expect_out "feature/7.0.x/bug1 feature/main/bug1"
+	reject_out "git push --atomic oss"
+'
+
+t "feature: dry run prints the feature branches and creates nothing" '
+	commit_on $W 7.0.x fix.txt
+	local before=$(git -C $W for-each-ref --format="%(refname) %(objectname)")
+	run -n -f bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	expect_out "feature/7.0.x/bug1 +from 7.0.x"
+	expect_out "feature/main/bug1 +from main"
+	expect_out "\(1\) feature/7.0.x/bug1 -> feature/main/bug1 +across merge would merge"
+	expect_out "base upstream: oss/main"
+	expect_out "git push --atomic -u fork"
+	[[ "$before" == "$(git -C $W for-each-ref --format="%(refname) %(objectname)")" ]]
+'
+
+t "feature: starting on the first feature branch uses it" '
+	git -C $W checkout -q -b feature/7.0.x/bug1
+	commit_on $W feature/7.0.x/bug1 fix.txt
+	run --feature bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	expect_out "feature/7.0.x/bug1 +already exists \(current branch\)"
+	reject_out "Creating .feature/7.0.x/bug1."
+	has_file feature/main/bug1 fix.txt
+	lacks_file 7.0.x fix.txt
+	[[ $(branch_of $W) == feature/7.0.x/bug1 ]]
+	expect_out "Created: feature/main/bug1"
+'
+
+t "feature: nothing to merge is judged from the first feature branch when starting on it" '
+	git -C $W checkout -q -b feature/7.0.x/bug1
+	commit_on $W feature/7.0.x/bug1 fix.txt
+	run -n -f bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	expect_out "would merge"
+	reject_out "Everything is up to date"
+'
+
+t "feature: an existing feature branch is a problem, with a hint for the first" '
+	git -C $W branch feature/main/bug1 main
+	git -C $W branch feature/7.0.x/bug1 7.0.x
+	run -f bug1 --fork-remote fork 7.0.x main; expect_rc 1
+	expect_out "2 problem"
+	expect_out "feature/main/bug1: branch already exists"
+	expect_out "feature/7.0.x/bug1: branch already exists \(to start from it, check it out"
+	git -C $W rev-parse -q --verify feature/7.0.x/bug1 > /dev/null
+'
+
+t "feature: a branch that is also a directory of the name is a problem" '
+	git -C $W branch feature main
+	run -f bug1 --fork-remote fork 7.0.x main; expect_rc 1
+	expect_out "feature/7.0.x/bug1: .feature. is a branch"
+'
+
+t "feature: unknown fork remote and bad names are reported" '
+	run -f bug1 --fork-remote nope 7.0.x main; expect_rc 1
+	expect_out "remote .nope. \(your fork\) does not exist"
+	run -f 7.0.x/bug1 7.0.x main; expect_rc 1; expect_out "must not contain"
+	run --feature; expect_rc 1; expect_out "needs a FEATURE name"
+	run --fork-remote fork 7.0.x main; expect_rc 1; expect_out "only applies with --feature"
+'
+
+t "feature: --embargoed makes feature/embargoed/... and pushes them to the commercial remote" '
+	commit_on $W 7.0.x fix.txt
+	commit_on $W embargoed/frozen/7.0.x own.txt
+	run --allow-ahead -e -f bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	for b in feature/main/bug1 feature/embargoed/frozen/7.0.x/bug1 feature/embargoed/frozen/main/bug1 feature/embargoed/active/7.0.x/bug1 feature/embargoed/active/main/bug1; do
+		has_file $b fix.txt || { echo "    $b lacks fix.txt"; return 1 }
+	done
+	lacks_file embargoed/active/main fix.txt
+	expect_out "git push --atomic -u fork"
+	expect_out "git push --atomic -u commercial"
+	expect_out "feature/embargoed/frozen/7.0.x/bug1 feature/embargoed/frozen/main/bug1 feature/embargoed/active/7.0.x/bug1 feature/embargoed/active/main/bug1"
+	[[ "$(git -C $W log -1 --format=%s feature/embargoed/frozen/7.0.x/bug1)" == "Merge branch '"'"'7.0.x'"'"' into '"'"'7.0.x'"'"'" ]]
+'
+
+t "feature: --ours records across hops with the generation names" '
+	commit_on $W 7.0.x deps.txt
+	run -o -f bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	lacks_file feature/main/bug1 deps.txt
+	[[ "$(git -C $W log -1 --format=%s feature/main/bug1)" == "merge(ours): 7.0.x into main" ]]
+'
+
+t "feature: worktrees of the base branches move to the feature branches, the run directory is restored" '
+	git -C $W worktree add -q $R/wt-main main
+	commit_on $W 7.0.x fix.txt
+	run -f bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	[[ $(branch_of $R/wt-main) == feature/main/bug1 ]]
+	[[ $(branch_of $W) == 7.0.x ]]
+	expect_out "Worktrees left on a feature branch"
+	expect_out "$R/wt-main is on feature/main/bug1"
+'
+
+t "feature: a dirty worktree stops everything before any branch is created" '
+	git -C $W worktree add -q $R/wt-main main
+	echo x >> $R/wt-main/f
+	run -f bug1 --fork-remote fork 7.0.x main; expect_rc 1
+	expect_out "main: working tree not clean"
+	! git -C $W rev-parse -q --verify feature/7.0.x/bug1 > /dev/null
+'
+
+# ---------------------------------------------------------------------------
+# gbbmfa
+add_generation() {
+	git -C $S branch 7.1.x main
+	git -C $S push -q oss 7.1.x
+	git -C $W fetch -q oss
+	git -C $W branch -q --track 7.1.x oss/7.1.x
+}
+
+t "gbbmfa: infers the feature and starts at the base of the current feature branch" '
+	add_generation
+	git -C $W checkout -q -b feature/7.0.x/bug1 7.0.x
+	commit_on $W feature/7.0.x/bug1 fix.txt
+	OSS="7.0.x 7.1.x main" run_a --no-embargoed --fork-remote fork; expect_rc 0
+	has_file feature/7.1.x/bug1 fix.txt
+	has_file feature/main/bug1 fix.txt
+	contains feature/7.1.x/bug1 feature/main/bug1
+	expect_out "Created: feature/7.1.x/bug1, feature/main/bug1"
+'
+
+t "gbbmfa: drops the older generations when the feature branch is on a newer one" '
+	add_generation
+	git -C $W checkout -q -b feature/7.1.x/bug1 7.1.x
+	commit_on $W feature/7.1.x/bug1 fix.txt
+	OSS="7.0.x 7.1.x main" run_a --no-embargoed -n --fork-remote fork; expect_rc 0
+	reject_out "feature/7.0.x/bug1"
+	expect_out "feature/7.1.x/bug1 +already exists"
+	expect_out "feature/main/bug1 +from main"
+'
+
+t "gbbmfa: --feature that matches the current branch behaves the same, another name does not trim" '
+	add_generation
+	git -C $W checkout -q -b feature/7.1.x/bug1 7.1.x
+	commit_on $W feature/7.1.x/bug1 fix.txt
+	commit_on $W 7.0.x other.txt
+	git -C $W checkout -q feature/7.1.x/bug1
+	OSS="7.0.x 7.1.x main" run_a --no-embargoed -n --fork-remote fork --feature bug1; expect_rc 0
+	reject_out "feature/7.0.x/bug1"
+	OSS="7.0.x 7.1.x main" run_a --no-embargoed -n --fork-remote fork -f bug2; expect_rc 0
+	expect_out "feature/7.0.x/bug2 +from 7.0.x"
+	expect_out "feature/main/bug2 +from main"
+'
+
+t "gbbmfa: --feature on another branch uses the full list" '
+	commit_on $W 7.0.x fix.txt
+	run_a --no-embargoed --feature bug1 --fork-remote fork; expect_rc 0
+	has_file feature/main/bug1 fix.txt
+'
+
+t "gbbmfa: a base that is not an OSS branch infers nothing" '
+	git -C $W checkout -q -b feature/embargoed/frozen/7.0.x/bug1 embargoed/frozen/7.0.x
+	run_a --no-embargoed; expect_rc 0
+	expect_out "not one of the OSS branches"
+	reject_out "feature/7.0.x/bug1"
+'
+
+t "gbbmfa: without a feature it behaves as before" '
+	commit_on $W 7.0.x fix.txt
+	run_a --no-embargoed; expect_rc 0
+	contains 7.0.x main
+	reject_out "Feature branches"
 '
 
 echo ""
