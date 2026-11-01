@@ -11,6 +11,8 @@ A zsh plugin that pushes the feature branches made by link:../git-branches/merge
 * A label that does not exist in a repository is created after asking, with the color and description it has in the other repository, or the color of its kind in spring-security (`in:` e8f9de, `type:` e3d9fc, `status:` fef2c0, `for:` c5def5, `theme:` F9D0C4)
 * Everything is validated before anything is pushed, and all problems are reported together
 * `--dry-run` prints the plan and changes nothing
+* `gh-prs checks [--watch]` runs `gh pr checks` for every pull request of the feature, with the same `--watch`, `--interval`, `--fail-fast` and `--required` options and exit codes
+* `gh-prs view` shows the pull requests of the feature (state, checks, review, milestone, title and links) without changing anything
 
 == Installation
 
@@ -26,9 +28,80 @@ Or manually by adding the plugin directory to your `PATH`. The plugin defines th
 [source,bash]
 ----
 gh-prs create [OPTIONS] [FEATURE]
+gh-prs view [--web | --json] [FEATURE]
+gh-prs checks [--watch] [OPTIONS] [FEATURE]
 ----
 
 `FEATURE` is the name in `feature/<branch>/FEATURE`. It defaults to the name of the branch you are on, so after `gbbmf --feature bug1 7.0.x 7.1.x main` run `gh-prs create` from any of the feature branches.
+
+=== View
+
+[source,bash]
+----
+gh-prs view [--web | --json] [FEATURE]
+----
+
+Shows one row per feature branch and then the links, and changes nothing. It finds the pull requests the way `create` does (head branch, base and owner, in the OSS and the commercial repository), but shows merged and closed ones as well, and a branch without one as `not created`.
+
+[source,text]
+----
+$ gh-prs view
+Pull requests for feature 'bug1':
+
+  PR      STATE  BASE                    CHECKS        REVIEW    MILESTONE  TITLE
+  #20101  open   7.0.x                   passed 12/12  approved  7.0.9      Fix CookieRequestCache parameters
+  #20102  draft  main                    failed 1      -         7.2.0      Merge Fix CookieRequestCache parameters
+  #950    open   embargoed/frozen/7.0.x  pending 8/12  -         -          Merge Fix CookieRequestCache parameters into embargoed/frozen/7.0.x
+  -       -      embargoed/active/7.0.x  not created   -         -          (branch feature/embargoed/active/7.0.x/bug1 not pushed)
+
+  https://github.com/spring-projects/spring-security/pull/20101
+  ...
+----
+
+* *Checks* are counted from the status checks of the pull request: `passed N/M`, `pending N/M`, or `failed N`.
+* `--web` opens every pull request in the browser.
+* `--json` prints one array (`pr`, `state`, `repo`, `base`, `branch`, `url`, `title`, `milestone`, `review`, `checks`, `created`), and needs `jq`.
+
+=== Checks
+
+[source,bash]
+----
+gh-prs checks [--watch [--interval SECONDS] [--fail-fast]] [--required] [--web | --json] [FEATURE]
+----
+
+For every pull request of the feature it prints the PR and then the output of link:https://cli.github.com/manual/gh_pr_checks[`gh pr checks`] (a summary and a table of the checks), so it reads like gh does. It is *not* `--verbose` or compact: you see what gh prints.
+
+[%header,cols="2,6"]
+|===
+| Option | Description
+| `--watch` | Refresh until every check of every pull request has finished, in the alternate screen with the header `Refreshing checks status every N seconds. Press Ctrl+C to quit.` that gh uses (without a terminal it prints a pull request again only when its checks changed)
+| `--interval`, `-i SECONDS` | Refresh interval in watch mode, 10 by default as in gh
+| `--fail-fast` | Exit watch mode on the first check failure
+| `--required` | Only the checks that are required
+| `--web` | Open the checks of every pull request in the browser
+| `--json` | One JSON array (`pr`, `repo`, `base`, `branch` and gh's `checks`), needs `jq`. Not with `--watch`
+|===
+
+As in gh, `--fail-fast` and `--interval` need `--watch`, and `--watch` does not combine with `--json`.
+
+*Exit status*, as `gh pr checks`: 0 when every check passed, 1 when a check failed (this wins over pending), and 8 when checks are still pending (without `--watch`). Ctrl+C ends watch mode with 130.
+A pull request without checks stops the command with gh's `no checks reported on the '...' branch` (that is what gh does right after a push, so wait a moment). Merged and closed pull requests are skipped with a note, and a branch without a pull request is an error.
+
+To be told when the checks are done, use the exit status:
+
+[source,bash]
+----
+# macOS notification with the result
+gh-prs checks --watch && osascript -e 'display notification "All checks passed" with title "gh-prs"' \
+                      || osascript -e 'display notification "Checks failed" with title "gh-prs"'
+
+# say it, or ring the terminal bell
+gh-prs checks --watch && say "checks passed" || say "checks failed"
+gh-prs checks --watch; printf '\a'
+
+# Linux
+gh-prs checks --watch && notify-send "gh-prs" "All checks passed" || notify-send "gh-prs" "Checks failed"
+----
 
 === Defaults
 
@@ -73,9 +146,11 @@ If no `in: *` or `type: *` label is given (and no existing pull request has one)
 | `--yes`, `-y` | Do not ask for `in:` and `type:` labels, and create missing labels without asking
 | `--oss-repo`, `--commercial-repo` | The repositories (default: the `oss`, `origin` and `commercial` remotes, as in link:../gh-milestones[gh-milestones])
 | `--dry-run`, `-n` | Print what would be pushed and run, change nothing
+| `--web`, `--json` | `view` and `checks`: open the pull requests (or their checks) in the browser, or print JSON
+| `--watch`, `--interval`, `--fail-fast`, `--required` | `checks` only, see <<Checks>>
 |===
 
-=== Output
+=== Output of create
 
 [source,text]
 ----

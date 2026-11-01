@@ -52,9 +52,32 @@ if [[ $1 == pr && $2 == list ]]; then
 		[[ ${@[i]} == --head ]] && head=${@[i+1]}
 		[[ ${@[i]} == --base ]] && base=${@[i+1]}
 	done
+	if [[ $a == *statusCheckRollup* ]]; then
+		f=$FIX/view_${repo//\//_}.tsv
+		[[ -e $f ]] && awk -F'\t' -v OFS='\t' -v h=$head -v b=$base '$1==h && $2==b {print $3, $4, $5, $6, $7, $8, $9, $10}' $f
+		exit 0
+	fi
 	f=$FIX/prs_${repo//\//_}.tsv
 	[[ -e $f ]] && awk -F'\t' -v h=$head -v b=$base '$1==h && $2==b {print $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8}' $f
 	exit 0
+fi
+if [[ $1 == pr && $2 == checks ]]; then
+	num=$3
+	for ((i = 1; i <= $#; i++)); do [[ ${@[i]} == -R ]] && repo=${@[i+1]}; done
+	echo "$a" >> $CALLS
+	[[ $a == *--web* ]] && exit 0
+	base=$FIX/checks_${repo//\//_}_$num
+	if [[ $a == *--json* ]]; then
+		[[ -e $base.json ]] && cat $base.json || echo "[]"
+		exit 0
+	fi
+	c=$(cat $base.count 2>/dev/null || echo 1)
+	echo $((c + 1)) > $base.count
+	while (( c > 0 )) && [[ ! -e $base.$c ]]; do (( c-- )); done
+	if (( c == 0 )); then echo "no checks reported on the '\''branch'\'' branch" >&2; exit 1; fi
+	rc=$(head -1 $base.$c)
+	tail -n +2 $base.$c
+	exit $rc
 fi
 if [[ $1 == pr && $2 == create ]]; then
 	for ((i = 1; i <= $#; i++)); do [[ ${@[i]} == -R ]] && repo=${@[i+1]}; done
@@ -162,6 +185,10 @@ not_called() { grep -qF -- "$1" $CALLS && { echo "    unexpected call: $1"; sed 
 # labels REPO NAME COLOR DESCRIPTION: a label of a repository
 labels() {
 	printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> $FIX/labels_${1//\//_}.tsv
+}
+# viewpr REPO HEAD BASE NUMBER STATE TITLE MILESTONE REVIEW CHECKS OWNER: what gh pr list --json gives for view
+viewpr() {
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$2" "$3" "$4" "$5" "https://github.com/$1/pull/$4" "$6" "$7" "$8" "$9" "${10}" >> $FIX/view_${1//\//_}.tsv
 }
 # prs REPO HEAD BASE NUMBER STATE TITLE OWNER LABELS: an existing pull request
 prs() {
@@ -417,6 +444,208 @@ t "labels: a number that is not in the list stops the run" '
 	GH_PRS_TTY=$R/tty run create; expect_rc 1
 	expect_out "not one of the numbers"
 	no_writes
+'
+
+# ---------------------------------------------------------------------------
+# view
+view_fixture() {
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 open "Fix the thing" 7.0.9 approved "passed 12/12" me
+	viewpr acme/proj feature/main/bug1 main 20102 draft "Merge Fix the thing" 7.2.0 - "failed 1" me
+	viewpr acme/proj-commercial feature/embargoed/frozen/7.0.x/bug1 embargoed/frozen/7.0.x 950 open "Merge Fix the thing into embargoed/frozen/7.0.x" - - "pending 8/12" acme
+}
+# checkstep REPO NUMBER STEP RC TEXT...: what gh pr checks prints at its STEPth call, and its exit code
+checkstep() {
+	local f=$FIX/checks_${1//\//_}_$2.$3
+	print -r -- "$4" > $f
+	shift 4
+	print -r -- "$*" >> $f
+}
+checks_json() { print -r -- '[{"name":"build","bucket":"pass"}]' > $FIX/checks_acme_proj_20101.json }
+json_field() { print -r -- "$out" | jq -r "$1" }
+
+t "view: a table with checks, review, milestone and the links, and no writes" '
+	view_fixture
+	run view; expect_rc 0
+	expect_out "Pull requests for feature .bug1.:"
+	expect_out "PR +STATE +BASE +CHECKS +REVIEW +MILESTONE +TITLE"
+	expect_out "#20101 +open +7.0.x +passed 12/12 +approved +7.0.9 +Fix the thing"
+	expect_out "#20102 +draft +main +failed 1 +- +7.2.0 +Merge Fix the thing"
+	expect_out "#950 +open +embargoed/frozen/7.0.x +pending 8/12 +- +- +Merge Fix the thing into embargoed/frozen/7.0.x"
+	expect_out "https://github.com/acme/proj/pull/20101"
+	expect_out "https://github.com/acme/proj-commercial/pull/950"
+	no_writes
+	! pushed fork feature/7.0.x/bug1
+'
+
+t "view: a branch without a pull request is shown as not created" '
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 open "Fix the thing" 7.0.9 - "passed 1/1" me
+	git -C $W config branch.feature/main/bug1.remote me
+	run view; expect_rc 0
+	expect_out "- +- +main +not created +- +- +\\(pushed, no pull request\\)"
+	expect_out "- +- +embargoed/frozen/7.0.x +not created +- +- +\\(branch feature/embargoed/frozen/7.0.x/bug1 not pushed\\)"
+'
+
+t "view: merged and closed pull requests are shown, an open one wins, other owners are ignored" '
+	oss_only
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20090 closed "Old try" - - "passed 1/1" me
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 open "Fix the thing" 7.0.9 - "passed 1/1" me
+	viewpr acme/proj feature/main/bug1 main 20102 merged "Merge Fix the thing" 7.2.0 approved "passed 1/1" me
+	viewpr acme/proj feature/main/bug1 main 777 open "Someone elses" 7.2.0 - - stranger
+	run view; expect_rc 0
+	expect_out "#20101 +open"
+	reject_out "#20090"
+	expect_out "#20102 +merged"
+	reject_out "#777"
+'
+
+t "view: --json prints one array" '
+	view_fixture
+	run view --json; expect_rc 0
+	[[ "$(json_field length)" == 3 ]]
+	[[ "$(json_field ".[0].pr")" == 20101 ]]
+	[[ "$(json_field ".[0].state")" == open ]]
+	[[ "$(json_field ".[0].repo")" == acme/proj ]]
+	[[ "$(json_field ".[0].base")" == 7.0.x ]]
+	[[ "$(json_field ".[0].checks")" == "passed 12/12" ]]
+	[[ "$(json_field ".[0].review")" == approved ]]
+	[[ "$(json_field ".[0].milestone")" == 7.0.9 ]]
+	[[ "$(json_field ".[0].created")" == true ]]
+	[[ "$(json_field ".[2].milestone")" == null ]]
+'
+
+t "view: --json marks a branch without a PR" '
+	oss_only
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 open "Fix the thing" 7.0.9 - "passed 1/1" me
+	run view --json; expect_rc 0
+	[[ "$(json_field ".[1].pr")" == null ]]
+	[[ "$(json_field ".[1].created")" == false ]]
+	[[ "$(json_field ".[1].url")" == null ]]
+'
+
+t "view: --web opens every pull request, and the options are checked" '
+	view_fixture
+	run view --web; expect_rc 0
+	called "pr view https://github.com/acme/proj/pull/20101 --web"
+	called "pr view https://github.com/acme/proj-commercial/pull/950 --web"
+	run view --web --json; expect_rc 1; expect_out "cannot be combined"
+	run create --web; expect_rc 1; expect_out "only apply to view"
+'
+
+# ---------------------------------------------------------------------------
+# checks
+checks_fixture() {
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 open "Fix the thing" 7.0.9 - - me
+	viewpr acme/proj feature/main/bug1 main 20102 open "Merge Fix the thing" 7.2.0 - - me
+	viewpr acme/proj-commercial feature/embargoed/frozen/7.0.x/bug1 embargoed/frozen/7.0.x 950 open "Merge" - - - acme
+}
+
+t "checks: shows what gh pr checks prints for every PR, and exits 0 when all passed" '
+	checks_fixture
+	checkstep acme/proj 20101 1 0 "All checks were successful"
+	checkstep acme/proj 20102 1 0 "All checks were successful"
+	checkstep acme/proj-commercial 950 1 0 "All checks were successful"
+	run checks; expect_rc 0
+	expect_out "#20101  7.0.x  \\(acme/proj\\)"
+	expect_out "#950  embargoed/frozen/7.0.x  \\(acme/proj-commercial\\)"
+	expect_out "All checks were successful"
+	expect_out "All 3 pull request\\(s\\) passed their checks"
+	called "pr checks 20101 -R acme/proj"
+	[[ -z "$(grep -v "^pr checks" $CALLS)" ]]
+'
+
+t "checks: a failing PR exits 1, pending exits 8, a failure wins" '
+	oss_only
+	checks_fixture
+	checkstep acme/proj 20101 1 8 "Some checks are still pending"
+	checkstep acme/proj 20102 1 0 "All checks were successful"
+	run checks; expect_rc 8
+	checkstep acme/proj 20101 1 1 "Some checks were not successful"
+	run checks; expect_rc 1
+	expect_out "1 pull request\\(s\\) have failing checks: #20101"
+'
+
+t "checks: --required is passed on to gh" '
+	oss_only
+	checks_fixture
+	checkstep acme/proj 20101 1 0 ok
+	checkstep acme/proj 20102 1 0 ok
+	run checks --required; expect_rc 0
+	called "pr checks 20101 -R acme/proj --required"
+'
+
+t "checks: a PR without checks stops with gh message" '
+	oss_only
+	checks_fixture
+	checkstep acme/proj 20101 1 0 ok
+	run checks --watch; expect_rc 1
+	expect_out "no checks reported on 1 pull request"
+	expect_out "#20102 \\(main\\): no checks reported on the"
+'
+
+t "checks: merged and closed PRs are skipped with a note, no PR is an error" '
+	oss_only
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 merged "Fix" - - - me
+	viewpr acme/proj feature/main/bug1 main 20102 open "Merge" - - - me
+	checkstep acme/proj 20102 1 0 ok
+	run checks; expect_rc 0
+	expect_out "Note: #20101 \\(7.0.x\\) is merged, skipped"
+	reject_out "#20101  7.0.x"
+	git -C $W branch -qD feature/main/bug1
+	git -C $W checkout -q feature/7.0.x/bug1
+	run checks; expect_rc 0; expect_out "Nothing to check"
+	git -C $W checkout -q -b feature/main/bug1 main
+	rm -f $FIX/view_acme_proj.tsv
+	viewpr acme/proj feature/7.0.x/bug1 7.0.x 20101 open "Fix" - - - me
+	run checks; expect_rc 1; expect_out "feature/main/bug1: there is no pull request for the branch yet"
+'
+
+t "checks: --watch refreshes until nothing is pending" '
+	oss_only
+	checks_fixture
+	checkstep acme/proj 20101 1 8 "Some checks are still pending"
+	checkstep acme/proj 20101 2 0 "All checks were successful"
+	checkstep acme/proj 20102 1 0 "All checks were successful"
+	run checks --watch --interval 1; expect_rc 0
+	expect_out "Some checks are still pending"
+	expect_out "All checks were successful"
+	[[ "$(grep -c "pr checks 20101" $CALLS)" == 2 ]]
+	expect_out "All 2 pull request\\(s\\) passed their checks"
+'
+
+t "checks: --watch --fail-fast stops on the first failure, without it keeps watching" '
+	oss_only
+	checks_fixture
+	checkstep acme/proj 20101 1 1 "Some checks were not successful"
+	checkstep acme/proj 20102 1 8 "Some checks are still pending"
+	checkstep acme/proj 20102 2 0 "All checks were successful"
+	run checks --watch --fail-fast -i 1; expect_rc 1
+	[[ "$(grep -c "pr checks 20102" $CALLS)" == 1 ]]
+	: > $CALLS; rm -f $FIX/*.count
+	run checks --watch -i 1; expect_rc 1
+	[[ "$(grep -c "pr checks 20102" $CALLS)" == 2 ]]
+'
+
+t "checks: flags are checked like gh does" '
+	run checks --watch --json; expect_rc 1; expect_out "cannot use .--watch. with .--json. flag"
+	run checks --fail-fast; expect_rc 1; expect_out "cannot use .--fail-fast. flag without .--watch. flag"
+	run checks --interval 5; expect_rc 1; expect_out "cannot use .--interval. flag without .--watch. flag"
+	run checks --watch --interval 0; expect_rc 1; expect_out "greater than 0"
+	run view --watch; expect_rc 1; expect_out "only apply to checks"
+	run create --required; expect_rc 1; expect_out "only apply to checks"
+'
+
+t "checks: --web opens the checks, --json prints them" '
+	oss_only
+	checks_fixture
+	run checks --web; expect_rc 0
+	called "pr checks 20101 -R acme/proj --web"
+	called "pr checks 20102 -R acme/proj --web"
+	checks_json
+	run checks --json; expect_rc 0
+	[[ "$(json_field length)" == 2 ]]
+	[[ "$(json_field ".[0].pr")" == 20101 ]]
+	[[ "$(json_field ".[0].checks[0].name")" == build ]]
+	[[ "$(json_field ".[1].checks | length")" == 0 ]]
 '
 
 echo ""

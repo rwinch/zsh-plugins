@@ -9,7 +9,11 @@ _gh-prs-features() {
 _gh-prs() {
 	if (( CURRENT == 2 )) && [[ $words[2] != -* ]]; then
 		local -a subcmds
-		subcmds=('create:push the feature branches and create or update their pull requests')
+		subcmds=(
+			'create:push the feature branches and create or update their pull requests'
+			'view:show the pull requests of a feature'
+			'checks:show the checks of the pull requests of a feature, optionally watching them'
+		)
 		_describe -t commands 'gh-prs command' subcmds
 		return
 	fi
@@ -27,8 +31,14 @@ _gh-prs() {
 		'--oss-repo[OSS repository]:repository (ORG/NAME):' \
 		'--commercial-repo[commercial repository]:repository (ORG/NAME):' \
 		'(-n --dry-run)'{-n,--dry-run}'[print what would be pushed and run, change nothing]' \
+		'(--json)--web[view, checks: open the pull requests (or their checks) in the browser]' \
+		'(--web --watch)--json[view, checks: print as JSON]' \
+		'(--json)--watch[checks: refresh until every check has finished]' \
+		'(-i --interval)'{-i,--interval}'[checks: refresh interval in seconds with --watch]:seconds:' \
+		'--fail-fast[checks: exit watch mode on the first failure]' \
+		'--required[checks: only the required checks]' \
 		'(-h --help)'{-h,--help}'[show this help message]' \
-		'1:command:(create)' \
+		'1:command:(create view checks)' \
 		'2::feature:_gh-prs-features'
 }
 

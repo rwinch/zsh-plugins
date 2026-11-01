@@ -5,6 +5,13 @@ dry_run=0                # --dry-run
 yes=0                    # --yes
 no_forward_label=0       # --no-forward-label
 draft=0                  # --draft
+web=0                    # --web (view, checks)
+json=0                   # --json (view, checks)
+watch=0                  # --watch (checks)
+interval=10              # --interval (checks)
+interval_given=0
+fail_fast=0              # --fail-fast (checks)
+required=0               # --required (checks)
 title_arg=""             # --title
 body_arg=""              # --body
 body_given=0
@@ -27,6 +34,7 @@ typeset -A repo_milestones    # repo -> open milestone titles, one per line
 typeset -A extra_labels       # repo -> labels picked at the prompt, one per line
 typeset -A repo_prompt        # repo -> 1 when the in:/type: prompt is needed
 typeset -a problems
+problem_tail=" Nothing was pushed or created:"
 
 oss_repo=""
 commercial_repo=""
@@ -42,6 +50,8 @@ nl=$'\n'
 usage() {
 	cat <<'USAGE'
 Usage: gh-prs create [OPTIONS] [FEATURE]
+       gh-prs view [--web | --json] [FEATURE]
+       gh-prs checks [--watch [--interval SECONDS] [--fail-fast]] [--required] [--web | --json] [FEATURE]
 
 Push the feature branches feature/<branch>/FEATURE (made by git-branches-merge-forward
 --feature) and open one pull request for each, or update the ones that are already open.
@@ -75,6 +85,27 @@ DEFAULTS (every one can be given as an option):
   and description it has in the other repository, or the color of its kind as in
   spring-security (in: e8f9de, type: e3d9fc, status: fef2c0, for: c5def5, theme: F9D0C4).
 
+VIEW:
+  gh-prs view shows the pull requests of the feature in a table (number, state, base, checks,
+  review, milestone and title) and their links, and changes nothing. A branch without a pull
+  request is shown as 'not created'. Merged and closed pull requests are shown too.
+    --web    open every pull request in the browser
+    --json   print one JSON array (pr, state, repo, base, branch, url, title, milestone,
+             review, checks), which needs jq
+
+CHECKS:
+  gh-prs checks shows `gh pr checks` for every pull request of the feature: the PR, then the
+  output of gh (a summary and a table of the checks). It takes the options of gh pr checks and
+  ends like it: 0 when all checks passed, 1 when one failed, 8 when checks are pending.
+    --watch              Refresh until every check of every PR has finished
+    --interval, -i SEC   Refresh interval in seconds in watch mode (default 10)
+    --fail-fast          Exit watch mode on the first check failure
+    --required           Only the checks that are required
+    --web                Open the checks of every PR in the browser
+    --json               Print one JSON array with the checks of every PR (needs jq)
+  A pull request without checks stops the command with gh's message ('no checks reported on
+  the ... branch'). Merged and closed pull requests are skipped with a note.
+
 OPTIONS:
   --title TEXT          Title of the first PR (the other titles are derived from it)
   --body TEXT           Body of the first PR
@@ -93,6 +124,8 @@ OPTIONS:
   --help, -h            Show this help
 
 EXAMPLES:
+  gh-prs view
+  gh-prs checks --watch
   gh-prs create --dry-run
   gh-prs create
   gh-prs create bug1 --label 'in: web' --label 'type: bug'
@@ -132,7 +165,7 @@ print_problem() {
 fail_if_problems() {
 	[[ ${#problems[@]} -eq 0 ]] && return 0
 	local p
-	echo "Error: ${#problems[@]} problem(s) found. Nothing was pushed or created:" >&2
+	echo "Error: ${#problems[@]} problem(s) found.${problem_tail}" >&2
 	for p in "${problems[@]}"; do
 		print_problem "$p"
 	done
@@ -333,6 +366,12 @@ while [[ $# -gt 0 ]]; do
 		--yes|-y) yes=1; shift ;;
 		--no-forward-label) no_forward_label=1; shift ;;
 		--draft) draft=1; shift ;;
+		--web) web=1; shift ;;
+		--watch) watch=1; shift ;;
+		--fail-fast) fail_fast=1; shift ;;
+		--required) required=1; shift ;;
+		--interval|-i) value_of "$1" $# "" "$2"; interval="$2"; interval_given=1; shift 2 ;;
+		--json) json=1; shift ;;
 		--title) value_of "$1" $# "" "$2"; title_arg="$2"; shift 2 ;;
 		--body) [[ $# -ge 2 ]] || usage_error "--body requires a value"; body_arg="$2"; body_given=1; shift 2 ;;
 		--label) value_of "$1" $# "" "$2"; user_labels+=("$2"); shift 2 ;;
@@ -355,8 +394,31 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-[[ -n "$subcommand" ]] || usage_error "A command is required (create)"
-[[ "$subcommand" == create ]] || usage_error "Unknown command: $subcommand (only create exists)"
+[[ -n "$subcommand" ]] || usage_error "A command is required (create, view or checks)"
+[[ "$subcommand" == create || "$subcommand" == view || "$subcommand" == checks ]] || usage_error "Unknown command: $subcommand (create, view or checks)"
+if [[ "$subcommand" == view || "$subcommand" == checks ]]; then
+	problem_tail=":"
+elif (( web || json )); then
+	usage_error "--web and --json only apply to view and checks"
+fi
+if [[ "$subcommand" != checks ]] && (( watch || fail_fast || required || interval_given )); then
+	usage_error "--watch, --interval, --fail-fast and --required only apply to checks"
+fi
+if (( watch && json )); then
+	usage_error "cannot use \`--watch\` with \`--json\` flag"
+fi
+if (( fail_fast && ! watch )); then
+	usage_error "cannot use \`--fail-fast\` flag without \`--watch\` flag"
+fi
+if (( interval_given && ! watch )); then
+	usage_error "cannot use \`--interval\` flag without \`--watch\` flag"
+fi
+[[ "$interval" == <-> && "$interval" -gt 0 ]] || usage_error "--interval must be a number of seconds greater than 0 (got '$interval')"
+(( web && json )) && usage_error "--web and --json cannot be combined"
+if (( json )) && ! command -v jq >/dev/null 2>&1; then
+	echo "Error: --json needs jq" >&2
+	exit 1
+fi
 (( ${#assignees} )) || assignees=(@me)
 
 command -v gh >/dev/null 2>&1 || { echo "Error: the gh CLI is not installed" >&2; exit 1; }
@@ -402,6 +464,300 @@ for line in "${(@f)$(print -r -- "${(F)ranked}" | sort)}"; do
 	twins+=("${line##*$'\t'}")
 done
 
+
+# ---------------------------------------------------------------------------
+# view
+# ---------------------------------------------------------------------------
+# One row per feature branch: number, state, url, title, milestone, review, checks, owner of the
+# head, as the TSV of gh pr list (the first open one, otherwise the newest).
+view_lookup() {
+	local repo="$1" branch="$2" base="$3" repo_owner="${1%%/*}" out line
+	local -a f
+	view_row=""
+	view_state=""
+	out=$(gh pr list -R "$repo" --head "$branch" --base "$base" --state all \
+		--json number,state,isDraft,url,title,milestone,reviewDecision,statusCheckRollup,headRepositoryOwner \
+		--jq '.[] | (.statusCheckRollup // []) as $c
+			| ($c | length) as $n
+			| ([$c[] | select((.conclusion // .state) | IN("SUCCESS", "NEUTRAL", "SKIPPED"))] | length) as $ok
+			| ([$c[] | select((.conclusion // .state) | IN("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"))] | length) as $bad
+			| [.number,
+			   (if .isDraft and .state == "OPEN" then "draft" else (.state | ascii_downcase) end),
+			   .url, .title, (.milestone.title // "-"),
+			   ((.reviewDecision // "") | if . == "APPROVED" then "approved" elif . == "CHANGES_REQUESTED" then "changes" elif . == "REVIEW_REQUIRED" then "required" else "-" end),
+			   (if $n == 0 then "-" elif $bad > 0 then "failed \($bad)" elif $ok == $n then "passed \($ok)/\($n)" else "pending \($ok)/\($n)" end),
+			   .headRepositoryOwner.login] | @tsv') || return 1
+	for line in "${(@f)out}"; do
+		[[ -z "$line" ]] && continue
+		f=("${(@ps:\t:)line}")
+		[[ "${f[8]:l}" == "${login:l}" || "${f[8]:l}" == "${repo_owner:l}" ]] || continue
+		if [[ -z "$view_row" || "${f[2]}" == open || "${f[2]}" == draft ]]; then
+			[[ -n "$view_row" && "${view_state}" == (open|draft) ]] && continue
+			view_row="$line"
+			view_state="${f[2]}"
+		fi
+	done
+	return 0
+}
+
+view_prs() {
+	local i b base repo note w_pr=2 w_state=5 w_base=4 w_checks=6 w_review=6 w_ms=9
+	local -a rows urls f
+	typeset -g view_state
+	i=0
+	for b in "${twins[@]}"; do
+		(( i++ ))
+		base="${${b#feature/}%/$feature}"
+		if is_embargoed_branch "$base"; then repo="$commercial_repo"; else repo="$oss_repo"; fi
+		if [[ -z "$repo" ]]; then
+			problem "$b: could not determine the repository (use --oss-repo or --commercial-repo)"
+			continue
+		fi
+		if ! view_lookup "$repo" "$b" "$base"; then
+			problem "$b: could not look up the pull requests of $repo (gh pr list failed)"
+			continue
+		fi
+		if [[ -n "$view_row" ]]; then
+			f=("${(@ps:\t:)view_row}")
+			# pr, state, repo, base, branch, url, title, milestone, review, checks
+			rows+=("$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' "#${f[1]}" "${f[2]}" "$repo" "$base" "$b" "${f[3]}" "${f[4]}" "${f[5]}" "${f[6]}" "${f[7]}")")
+			urls+=("${f[3]}")
+		else
+			if [[ -n "$(git config "branch.$b.remote" 2>/dev/null)" ]]; then
+				note="(pushed, no pull request)"
+			else
+				note="(branch $b not pushed)"
+			fi
+			rows+=("$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' "-" "-" "$repo" "$base" "$b" "" "$note" "-" "-" "not created")")
+		fi
+	done
+	fail_if_problems
+
+	if (( json )); then
+		print -r -- "${(F)rows}" | jq -R -s -c '[split("\n")[] | select(length > 0) | split("\t") | {
+			pr: (if .[0] == "-" then null else (.[0][1:] | tonumber) end),
+			state: (if .[1] == "-" then null else .[1] end),
+			repo: .[2], base: .[3], branch: .[4],
+			url: (if .[5] == "" then null else .[5] end),
+			title: (if .[5] == "" then null else .[6] end),
+			milestone: (if .[7] == "-" then null else .[7] end),
+			review: (if .[8] == "-" then null else .[8] end),
+			checks: (if .[9] == "-" then null elif .[9] == "not created" then null else .[9] end),
+			created: (.[5] != "")
+		}]'
+		return 0
+	fi
+
+	if (( web )); then
+		if (( ${#urls} == 0 )); then
+			echo "No pull requests to open."
+			return 0
+		fi
+		for u in "${urls[@]}"; do
+			gh pr view "$u" --web
+		done
+		return 0
+	fi
+
+	for r in "${rows[@]}"; do
+		f=("${(@ps:\t:)r}")
+		(( ${#f[1]} > w_pr )) && w_pr=${#f[1]}
+		(( ${#f[2]} > w_state )) && w_state=${#f[2]}
+		(( ${#f[4]} > w_base )) && w_base=${#f[4]}
+		(( ${#f[10]} > w_checks )) && w_checks=${#f[10]}
+		(( ${#f[9]} > w_review )) && w_review=${#f[9]}
+		(( ${#f[8]} > w_ms )) && w_ms=${#f[8]}
+	done
+	echo "Pull requests for feature '$feature':"
+	echo ""
+	printf '  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n' $w_pr PR $w_state STATE $w_base BASE $w_checks CHECKS $w_review REVIEW $w_ms MILESTONE TITLE
+	for r in "${rows[@]}"; do
+		f=("${(@ps:\t:)r}")
+		printf '  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n' $w_pr "${f[1]}" $w_state "${f[2]}" $w_base "${f[4]}" $w_checks "${f[10]}" $w_review "${f[9]}" $w_ms "${f[8]}" "${f[7]}"
+	done
+	if (( ${#urls} )); then
+		echo ""
+		for u in "${urls[@]}"; do echo "  $u"; done
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# checks
+# ---------------------------------------------------------------------------
+# What gh pr checks prints (and exits with) for the pull request i of the list.
+fetch_checks() {
+	local i="$1"
+	local -a args
+	args=(pr checks "${c_num[$i]}" -R "${c_repo[$i]}")
+	(( required )) && args+=(--required)
+	if [[ -t 1 ]]; then
+		c_out[$i]=$(GH_FORCE_TTY=1 gh "${args[@]}" 2>&1)
+	else
+		c_out[$i]=$(gh "${args[@]}" 2>&1)
+	fi
+	c_rc[$i]=$?
+	c_none[$i]=0
+	[[ "${c_out[$i]}" == *"checks reported on"* ]] && c_none[$i]=1
+	return 0
+}
+
+checks_prs() {
+	local i b base repo f n
+	local -a c_num c_repo c_base c_branch c_rc c_none notes
+	local -A c_out last_out
+	local pending failed other done_n now
+
+	i=0
+	for b in "${twins[@]}"; do
+		base="${${b#feature/}%/$feature}"
+		if is_embargoed_branch "$base"; then repo="$commercial_repo"; else repo="$oss_repo"; fi
+		if [[ -z "$repo" ]]; then
+			problem "$b: could not determine the repository (use --oss-repo or --commercial-repo)"
+			continue
+		fi
+		if ! view_lookup "$repo" "$b" "$base"; then
+			problem "$b: could not look up the pull requests of $repo (gh pr list failed)"
+			continue
+		fi
+		if [[ -z "$view_row" ]]; then
+			problem "$b: there is no pull request for the branch yet (gh-prs create)"
+			continue
+		fi
+		f=("${(@ps:\t:)view_row}")
+		if [[ "${f[2]}" == (merged|closed) ]]; then
+			notes+=("#${f[1]} ($base) is ${f[2]}, skipped")
+			continue
+		fi
+		(( i++ ))
+		c_num[$i]="${f[1]}"; c_repo[$i]="$repo"; c_base[$i]="$base"; c_branch[$i]="$b"
+	done
+	fail_if_problems
+	n=$i
+	for note in "${notes[@]}"; do echo "Note: $note" >&2; done
+	if (( n == 0 )); then
+		echo "Nothing to check: every pull request is merged or closed."
+		return 0
+	fi
+
+	if (( web )); then
+		for (( i = 1; i <= n; i++ )); do
+			gh pr checks "${c_num[$i]}" -R "${c_repo[$i]}" --web
+		done
+		return 0
+	fi
+
+	if (( json )); then
+		local all="[]" one
+		for (( i = 1; i <= n; i++ )); do
+			one=$(gh pr checks "${c_num[$i]}" -R "${c_repo[$i]}" ${required:+--required} \
+				--json bucket,completedAt,description,event,link,name,startedAt,state,workflow 2>/dev/null)
+			[[ -z "$one" ]] && one="[]"
+			all=$(print -r -- "$one" | jq -c --argjson all "$all" --arg pr "${c_num[$i]}" --arg repo "${c_repo[$i]}" \
+				--arg base "${c_base[$i]}" --arg branch "${c_branch[$i]}" \
+				'$all + [{pr: ($pr | tonumber), repo: $repo, base: $base, branch: $branch, checks: .}]')
+		done
+		print -r -- "$all"
+		return 0
+	fi
+
+	local tty=0
+	[[ -t 1 ]] && tty=1
+	if (( watch && tty )); then
+		printf '\e[?1049h'
+		trap 'printf "\e[?1049l"; exit 130' INT
+	fi
+
+	while true; do
+		for (( i = 1; i <= n; i++ )); do fetch_checks $i; done
+
+		# gh stops at the first fetch of a pull request without checks
+		local -a nochecks first_line
+		nochecks=()
+		for (( i = 1; i <= n; i++ )); do
+			if (( c_none[$i] )); then
+				first_line=("${(@f)c_out[$i]}")
+				nochecks+=("#${c_num[$i]} (${c_base[$i]}): ${first_line[1]}")
+			fi
+		done
+		if (( ${#nochecks} )); then
+			(( watch && tty )) && { printf '\e[?1049l'; trap - INT }
+			echo "Error: no checks reported on ${#nochecks} pull request(s):" >&2
+			for note in "${nochecks[@]}"; do echo "  - $note" >&2; done
+			return 1
+		fi
+
+		pending=0; failed=0; other=0; done_n=0
+		for (( i = 1; i <= n; i++ )); do
+			case "${c_rc[$i]}" in
+				0) (( done_n++ )) ;;
+				8) (( pending++ )) ;;
+				1) (( failed++ )); (( done_n++ )) ;;
+				*) (( other++ )) ;;
+			esac
+		done
+
+		if (( watch && tty )); then
+			printf '\e[H\e[2J'
+			(( pending > 0 )) && printf '\e[1mRefreshing checks status every %s seconds. Press Ctrl+C to quit.\e[0m\n\n' "$interval"
+			print_checks_frame
+			now=$(date +%H:%M:%S)
+			echo "$done_n of $n pull requests finished   updated $now"
+		elif (( watch )); then
+			for (( i = 1; i <= n; i++ )); do
+				if [[ "${last_out[$i]}" != "${c_out[$i]}" ]]; then
+					print_checks_block $i
+					last_out[$i]="${c_out[$i]}"
+				fi
+			done
+		else
+			print_checks_frame
+		fi
+
+		(( watch )) || break
+		(( pending == 0 && other == 0 )) && break
+		(( other > 0 )) && break
+		(( fail_fast && failed > 0 )) && break
+		sleep "$interval"
+	done
+
+	if (( watch && tty )); then
+		printf '\e[?1049l'
+		trap - INT
+		print_checks_frame
+	fi
+
+	if (( other > 0 )); then
+		for (( i = 1; i <= n; i++ )); do
+			[[ "${c_rc[$i]}" == (0|1|8) ]] || echo "Error: gh pr checks failed for #${c_num[$i]} (${c_repo[$i]}):" >&2
+		done
+		return 1
+	fi
+	if (( failed > 0 )); then
+		local -a bad
+		for (( i = 1; i <= n; i++ )); do
+			[[ "${c_rc[$i]}" == 1 ]] && bad+=("#${c_num[$i]}")
+		done
+		echo "$failed pull request(s) have failing checks: ${(j:, :)bad}"
+		return 1
+	fi
+	if (( pending > 0 )); then
+		return 8
+	fi
+	echo "All $n pull request(s) passed their checks."
+	return 0
+}
+
+print_checks_block() {
+	echo "#${c_num[$1]}  ${c_base[$1]}  (${c_repo[$1]})"
+	print -r -- "${c_out[$1]}"
+	echo ""
+}
+
+print_checks_frame() {
+	local j
+	for (( j = 1; j <= n; j++ )); do print_checks_block $j; done
+}
+
 # ---------------------------------------------------------------------------
 # The plan
 # ---------------------------------------------------------------------------
@@ -410,6 +766,22 @@ resolve_repos
 login=$(gh api user --jq .login 2>/dev/null)
 [[ -n "$login" ]] || problem "could not get your GitHub login from 'gh api user' (is gh authenticated? gh auth login)"
 [[ -n "$login" ]] && remote_exists "$login" && fork_remote="$login"
+
+if [[ "$subcommand" == view ]]; then
+	problems=()
+	[[ -n "$login" ]] || problem "could not get your GitHub login from 'gh api user' (is gh authenticated? gh auth login)"
+	fail_if_problems
+	view_prs
+	exit 0
+fi
+
+if [[ "$subcommand" == checks ]]; then
+	problems=()
+	[[ -n "$login" ]] || problem "could not get your GitHub login from 'gh api user' (is gh authenticated? gh auth login)"
+	fail_if_problems
+	checks_prs
+	exit $?
+fi
 
 need_oss=0; need_commercial=0
 for b in "${twins[@]}"; do
