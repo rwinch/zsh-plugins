@@ -59,7 +59,9 @@ Run it again after changing options or the branches to update the pull requests.
 FEATURE defaults to the name of the current branch (feature/<branch>/<name>).
 
 The pull requests are made oldest branch first. The first one is the original change, the
-others are forward merges that link to it. Nothing is merged.
+others are forward merges that link to it. A branch whose tip is not a merge commit is also an
+original change: it gets the title and body of its commit, and the forward merges after it
+link to it. Nothing is merged.
 
 PUSHING:
   OSS branches        to the remote named after your GitHub login (your fork) if it
@@ -107,7 +109,7 @@ CHECKS:
   the ... branch'). Merged and closed pull requests are skipped with a note.
 
 OPTIONS:
-  --title TEXT          Title of the first PR (the other titles are derived from it)
+  --title TEXT          Title of every original change (the forward merge titles follow from it)
   --body TEXT           Body of the first PR
   --label LABEL         Add a label to every PR, may be repeated
   --assignee USER       Assignee of every PR (default @me), may be repeated
@@ -464,6 +466,31 @@ for line in "${(@f)$(print -r -- "${(F)ranked}" | sort)}"; do
 	twins+=("${line##*$'\t'}")
 done
 
+# An origin is the original change: the oldest branch, or a branch whose tip is not a merge
+# commit (the change was applied by hand, not merged from an older branch). It gets the title
+# and body of its own commit. pr_parent[i] is the nearest origin at or before i.
+typeset -a pr_origin pr_parent
+last_origin=1
+for (( i = 1; i <= ${#twins}; i++ )); do
+	parents=("${(@s: :)$(git rev-list --parents -n 1 "refs/heads/${twins[$i]}" 2>/dev/null)}")
+	if (( i == 1 || ${#parents} < 3 )); then
+		pr_origin[$i]=1
+		last_origin=$i
+		pr_parent[$i]=$i
+		continue
+	fi
+	pr_origin[$i]=0
+	# the latest origin whose branch this one contains, otherwise the nearest one before it
+	pr_parent[$i]=$last_origin
+	for (( j = i - 1; j >= 1; j-- )); do
+		(( pr_origin[j] )) || continue
+		if git merge-base --is-ancestor "refs/heads/${twins[$j]}" "refs/heads/${twins[$i]}"; then
+			pr_parent[$i]=$j
+			break
+		fi
+	done
+done
+
 
 # ---------------------------------------------------------------------------
 # view
@@ -816,7 +843,7 @@ for b in "${twins[@]}"; do
 		embargoed/active/*) j="${idx_of_base[embargoed/frozen/${base#embargoed/active/}]:-0}" ;;
 		*) j=0 ;;
 	esac
-	(( i > 1 && j > 0 && j < i )) && pr_source[$i]=$j
+	(( i > 1 && j > 0 && j < i && ! pr_origin[i] )) && pr_source[$i]=$j
 
 	if is_embargoed_branch "$base"; then
 		pr_repo[$i]="$commercial_repo"
@@ -888,25 +915,34 @@ if [[ -z "$tip_commit" && ( -z "$title_arg" || $body_given -eq 0 ) ]]; then
 	fi
 fi
 ncommits=${#commits}
+typeset -a own_title own_body
 if [[ -n "$tip_commit" ]]; then
-	first_title="${title_arg:-$(git log -1 --format=%s "$tip_commit")}"
+	own_title[1]="${title_arg:-$(git log -1 --format=%s "$tip_commit")}"
 	if (( body_given )); then
-		first_body="$body_arg"
+		own_body[1]="$body_arg"
 	else
-		first_body="$(git log -1 --format=%b "$tip_commit")"
+		own_body[1]="$(git log -1 --format=%b "$tip_commit")"
 	fi
 else
-	first_title="$title_arg"
-	first_body="$body_arg"
+	own_title[1]="$title_arg"
+	own_body[1]="$body_arg"
 fi
 (( ncommits > 1 )) && echo "Note: $first_branch has $ncommits commits on top of $first_base, the title and body come from the last one (${tip_commit[1,10]})." >&2
 
-first_num="${pr_num[1]}"
+# the other origins: the commit at the tip of the branch (it may already be in the base branch)
+for (( i = 2; i <= ${#twins}; i++ )); do
+	(( pr_origin[i] )) || continue
+	own_title[$i]="${title_arg:-$(git log -1 --format=%s "refs/heads/${twins[$i]}")}"
+	own_body[$i]="$(git log -1 --format=%b "refs/heads/${twins[$i]}")"
+	if [[ -z "${own_title[$i]}" ]]; then
+		problem "${twins[$i]}: no commit to take the title from"
+	fi
+done
 
 # labels
 for (( i = 1; i <= ${#twins}; i++ )); do
 	lbls=("${user_labels[@]}")
-	(( i > 1 && ! no_forward_label )) && lbls+=("status: forward-port")
+	(( ! pr_origin[i] && ! no_forward_label )) && lbls+=("status: forward-port")
 	pr_labels[$i]="${(F)lbls}"
 done
 
@@ -986,13 +1022,14 @@ done
 # Printing
 # ---------------------------------------------------------------------------
 forward_ref() {
-	local repo="$1"
-	if [[ -z "$first_num" ]]; then
-		echo "gh-<number of PR 1>"
-	elif [[ "$repo" == "$first_repo" ]]; then
-		echo "gh-$first_num"
+	local repo="$1" p="$2"
+	local n="${pr_num[$p]}"
+	if [[ -z "$n" ]]; then
+		echo "gh-<number of PR $p>"
+	elif [[ "$repo" == "${pr_repo[$p]}" ]]; then
+		echo "gh-$n"
 	else
-		echo "$first_repo#$first_num"
+		echo "${pr_repo[$p]}#$n"
 	fi
 }
 
@@ -1010,22 +1047,23 @@ pr_ref() {
 }
 
 pr_title_of() {
-	if (( $1 == 1 )); then
-		echo "$first_title"
+	local p="${pr_parent[$1]}"
+	if (( pr_origin[$1] )); then
+		echo "${own_title[$1]}"
 	elif (( pr_source[$1] > 0 )); then
-		echo "Merge $first_title into ${pr_base[$1]}"
+		echo "Merge ${own_title[$p]} into ${pr_base[$1]}"
 	else
-		echo "Merge $first_title"
+		echo "Merge ${own_title[$p]}"
 	fi
 }
 
 pr_body_of() {
-	if (( $1 == 1 )); then
-		echo "$first_body"
+	if (( pr_origin[$1] )); then
+		echo "${own_body[$1]}"
 	elif (( pr_source[$1] > 0 )); then
 		echo "Merge of $(pr_ref "${pr_source[$1]}" "${pr_repo[$1]}") into ${pr_base[$1]}"
 	else
-		echo "Forward merge of $(forward_ref "${pr_repo[$1]}")"
+		echo "Forward merge of $(forward_ref "${pr_repo[$1]}" "${pr_parent[$1]}")"
 	fi
 }
 
@@ -1051,11 +1089,12 @@ print_plan() {
 	for (( i = 1; i <= ${#twins}; i++ )); do
 		action=create
 		[[ -n "${pr_num[$i]}" ]] && action="update #${pr_num[$i]}"
+		(( pr_origin[i] && i > 1 )) && action+=" (original change, not a merge)"
 		printf '  (%d) %s  ->  %s   %s   %s\n' "$i" "${pr_branch[$i]}" "${pr_base[$i]}" "${pr_repo[$i]}" "$action"
 		echo "        push:      git push -u ${pr_remote[$i]} ${pr_branch[$i]}"
 		echo "        head:      ${pr_head[$i]}"
 		echo "        title:     $(pr_title_of $i)"
-		if (( i == 1 )) && [[ -z "$first_body" ]]; then
+		if (( pr_origin[i] )) && [[ -z "${own_body[$i]}" ]]; then
 			echo "        body:      (empty)"
 		else
 			body_lines=("${(@f)$(pr_body_of $i)}")
@@ -1146,9 +1185,6 @@ for (( i = 1; i <= ${#twins}; i++ )); do
 		pr_num[$i]="${url##*/}"
 		(( created++ ))
 		echo "  created  $url   ${pr_base[$i]}"
-	fi
-	if (( i == 1 )); then
-		first_num="${pr_num[1]}"
 	fi
 done
 

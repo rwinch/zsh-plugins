@@ -241,6 +241,22 @@ t "dry run: prints the plan and changes nothing" '
 	! pushed fork feature/7.0.x/bug1
 '
 
+t "origin: a branch whose tip is not a merge is an original change, with its own title and no Merge" '
+	add_generations
+	git -C $W checkout -q -B feature/embargoed/active/7.0.x/bug1 embargoed/active/7.0.x
+	echo hand > $W/hand.txt; git -C $W add hand.txt
+	git -C $W commit -q -m "Fix the thing by hand" -m "Applied without a merge."
+	run create -n --yes; expect_rc 0
+	local blk=$(print -r -- "$out" | awk "/feature\/embargoed\/active\/7.0.x\/bug1 +->/ {p=1; next} /^  \([0-9]+\)/ {p=0} p")
+	print -r -- "$blk" | grep -qE "title: +Fix the thing by hand$"
+	print -r -- "$blk" | grep -qE "body: +Applied without a merge."
+	! print -r -- "$blk" | grep -q "status: forward-port"
+	expect_out "active/7.0.x +acme/proj-commercial +create \(original change, not a merge\)"
+	run create -n --yes --title "Own title"; expect_rc 0
+	local blk=$(print -r -- "$out" | awk "/feature\/embargoed\/active\/7.0.x\/bug1 +->/ {p=1; next} /^  \([0-9]+\)/ {p=0} p")
+	print -r -- "$blk" | grep -qE "title: +Own title$"
+'
+
 t "order: oldest first, by what contains what" '
 	run create -n --yes; expect_rc 0
 	local o=$(print -r -- "$out" | grep -E "^  \([0-9]\) " | sed -E "s/^  \(([0-9])\) ([^ ]+).*/\1 \2/")

@@ -5,7 +5,7 @@ A zsh plugin that pushes the feature branches made by link:../git-branches/merge
 == Features
 
 * `gh-prs create` pushes `feature/<branch>/FEATURE` for every branch and creates a pull request into `<branch>`, oldest branch first
-* The first pull request is the change itself, the others are forward merges that link to it
+* The first pull request is the change itself, the others are forward merges that link to it. A branch whose tip is not a merge commit (the change was applied by hand) is an original change too: its title and body are those of its commit (no `Merge`, no `status: forward-port`), and the forward merges after it link to it
 * OSS branches go to your fork (the remote named after your GitHub login) when it exists, otherwise to the `oss` remote. Embargoed branches *must* go to the `commercial` remote, and the command fails when it does not exist
 * Running it again updates the open pull requests (`gh pr edit`) instead of creating new ones
 * A label that does not exist in a repository is created after asking, with the color and description it has in the other repository, or the color of its kind in spring-security (`in:` e8f9de, `type:` e3d9fc, `status:` fef2c0, `for:` c5def5, `theme:` F9D0C4)
@@ -135,7 +135,7 @@ If no `in: *` or `type: *` label is given (and no existing pull request has one)
 [%header,cols="2,6"]
 |===
 | Option | Description
-| `--title TEXT` | Title of the first PR, the others follow from it
+| `--title TEXT` | Title of every original change (the first PR and branches whose tip is not a merge), the forward merges follow from it
 | `--body TEXT` | Body of the first PR
 | `--label LABEL` | Add a label to every PR, may be repeated
 | `--assignee USER` | Assignee of every PR instead of `@me`, may be repeated
