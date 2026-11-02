@@ -58,7 +58,8 @@ Push the feature branches feature/<branch>/FEATURE (made by git-branches-merge-f
 Run it again after changing options or the branches to update the pull requests.
 FEATURE defaults to the name of the current branch (feature/<branch>/<name>).
 
-The pull requests are made oldest branch first. The first one is the original change, the
+The pull requests are listed by group (embargoed lts, OSS, embargoed frozen, embargoed active),
+oldest branch first inside a group. The first one is the original change, the
 others are forward merges that link to it. A branch whose tip is not a merge commit is also an
 original change: it gets the title and body of its commit, and the forward merges after it
 link to it. Nothing is merged.
@@ -462,33 +463,53 @@ for b in "${found_branches[@]}"; do
 	esac
 	ranked+=("$(printf '%03d\t%d\t%s' $(( 999 - n )) "$rank" "$b")")
 done
+typeset -a chain
 for line in "${(@f)$(print -r -- "${(F)ranked}" | sort)}"; do
+	chain+=("${line##*$'\t'}")
+done
+# the oldest branch is the first original change, wherever the grouping puts it
+chain_first="${chain[1]}"
+
+# listed by group: lts, oss, frozen, active, and oldest first inside a group
+typeset -a grouped
+gi=0
+for b in "${chain[@]}"; do
+	(( gi++ ))
+	case "${${b#feature/}%/$feature}" in
+		embargoed/lts/*) g=0 ;;
+		embargoed/frozen/*) g=2 ;;
+		embargoed/active/*) g=3 ;;
+		*) g=1 ;;
+	esac
+	grouped+=("$(printf '%d\t%03d\t%s' $g $gi "$b")")
+done
+fi_idx=0
+for line in "${(@f)$(print -r -- "${(F)grouped}" | sort)}"; do
 	twins+=("${line##*$'\t'}")
+	[[ "${line##*$'\t'}" == "$chain_first" ]] && fi_idx=${#twins}
 done
 
 # An origin is the original change: the oldest branch, or a branch whose tip is not a merge
 # commit (the change was applied by hand, not merged from an older branch). It gets the title
-# and body of its own commit. pr_parent[i] is the nearest origin at or before i.
+# and body of its own commit. pr_parent[i] is the newest origin whose branch this one contains.
 typeset -a pr_origin pr_parent
-last_origin=1
 for (( i = 1; i <= ${#twins}; i++ )); do
 	parents=("${(@s: :)$(git rev-list --parents -n 1 "refs/heads/${twins[$i]}" 2>/dev/null)}")
-	if (( i == 1 || ${#parents} < 3 )); then
-		pr_origin[$i]=1
-		last_origin=$i
-		pr_parent[$i]=$i
-		continue
-	fi
-	pr_origin[$i]=0
-	# the latest origin whose branch this one contains, otherwise the nearest one before it
-	pr_parent[$i]=$last_origin
-	for (( j = i - 1; j >= 1; j-- )); do
-		(( pr_origin[j] )) || continue
-		if git merge-base --is-ancestor "refs/heads/${twins[$j]}" "refs/heads/${twins[$i]}"; then
-			pr_parent[$i]=$j
-			break
+	if (( i == fi_idx || ${#parents} < 3 )); then pr_origin[$i]=1; else pr_origin[$i]=0; fi
+done
+for (( i = 1; i <= ${#twins}; i++ )); do
+	pr_parent[$i]=$i
+	(( pr_origin[i] )) && continue
+	pr_parent[$i]=$fi_idx
+	best=0
+	for (( j = 1; j <= ${#twins}; j++ )); do
+		(( j != i && pr_origin[j] )) || continue
+		git merge-base --is-ancestor "refs/heads/${twins[$j]}" "refs/heads/${twins[$i]}" || continue
+		if (( best == 0 )) || git merge-base --is-ancestor "refs/heads/${twins[$best]}" "refs/heads/${twins[$j]}"; then
+			best=$j
 		fi
 	done
+	(( best )) && pr_parent[$i]=$best
 done
 
 
@@ -843,7 +864,7 @@ for b in "${twins[@]}"; do
 		embargoed/active/*) j="${idx_of_base[embargoed/frozen/${base#embargoed/active/}]:-0}" ;;
 		*) j=0 ;;
 	esac
-	(( i > 1 && j > 0 && j < i && ! pr_origin[i] )) && pr_source[$i]=$j
+	(( j > 0 && j < i && ! pr_origin[i] )) && pr_source[$i]=$j
 
 	if is_embargoed_branch "$base"; then
 		pr_repo[$i]="$commercial_repo"
@@ -902,9 +923,9 @@ for b in "${twins[@]}"; do
 done
 
 # titles and bodies: the first PR from the commit (or the options), the others from the first
-first_branch="${pr_branch[1]}"
-first_base="${pr_base[1]}"
-first_repo="${pr_repo[1]}"
+first_branch="${pr_branch[$fi_idx]}"
+first_base="${pr_base[$fi_idx]}"
+first_repo="${pr_repo[$fi_idx]}"
 typeset -a commits
 commits=("${(@f)$(git log --no-merges --format=%H "refs/heads/$first_base..refs/heads/$first_branch" 2>/dev/null)}")
 commits=("${(@)commits:#}")
@@ -917,21 +938,21 @@ fi
 ncommits=${#commits}
 typeset -a own_title own_body
 if [[ -n "$tip_commit" ]]; then
-	own_title[1]="${title_arg:-$(git log -1 --format=%s "$tip_commit")}"
+	own_title[$fi_idx]="${title_arg:-$(git log -1 --format=%s "$tip_commit")}"
 	if (( body_given )); then
-		own_body[1]="$body_arg"
+		own_body[$fi_idx]="$body_arg"
 	else
-		own_body[1]="$(git log -1 --format=%b "$tip_commit")"
+		own_body[$fi_idx]="$(git log -1 --format=%b "$tip_commit")"
 	fi
 else
-	own_title[1]="$title_arg"
-	own_body[1]="$body_arg"
+	own_title[$fi_idx]="$title_arg"
+	own_body[$fi_idx]="$body_arg"
 fi
 (( ncommits > 1 )) && echo "Note: $first_branch has $ncommits commits on top of $first_base, the title and body come from the last one (${tip_commit[1,10]})." >&2
 
 # the other origins: the commit at the tip of the branch (it may already be in the base branch)
-for (( i = 2; i <= ${#twins}; i++ )); do
-	(( pr_origin[i] )) || continue
+for (( i = 1; i <= ${#twins}; i++ )); do
+	(( pr_origin[i] && i != fi_idx )) || continue
 	own_title[$i]="${title_arg:-$(git log -1 --format=%s "refs/heads/${twins[$i]}")}"
 	own_body[$i]="$(git log -1 --format=%b "refs/heads/${twins[$i]}")"
 	if [[ -z "${own_title[$i]}" ]]; then
@@ -1085,11 +1106,11 @@ print_plan() {
 	(( need_commercial )) && push_note+="${push_note:+, }embargoed branches -> commercial"
 	echo "Push remotes: $push_note"
 	echo ""
-	echo "Pull requests for feature '$feature' (oldest first):"
+	echo "Pull requests for feature '$feature' (lts, oss, frozen, active):"
 	for (( i = 1; i <= ${#twins}; i++ )); do
 		action=create
 		[[ -n "${pr_num[$i]}" ]] && action="update #${pr_num[$i]}"
-		(( pr_origin[i] && i > 1 )) && action+=" (original change, not a merge)"
+		(( pr_origin[i] && i != fi_idx )) && action+=" (original change, not a merge)"
 		printf '  (%d) %s  ->  %s   %s   %s\n' "$i" "${pr_branch[$i]}" "${pr_base[$i]}" "${pr_repo[$i]}" "$action"
 		echo "        push:      git push -u ${pr_remote[$i]} ${pr_branch[$i]}"
 		echo "        head:      ${pr_head[$i]}"
@@ -1143,7 +1164,11 @@ echo ""
 echo "Pushing and creating:"
 
 created=0; updated=0
-for (( i = 1; i <= ${#twins}; i++ )); do
+# the original changes first: the others refer to their numbers
+typeset -a order
+for (( i = 1; i <= ${#twins}; i++ )); do (( pr_origin[i] )) && order+=($i); done
+for (( i = 1; i <= ${#twins}; i++ )); do (( pr_origin[i] )) || order+=($i); done
+for i in "${order[@]}"; do
 	b="${pr_branch[$i]}"
 	if ! git push -u "${pr_remote[$i]}" "$b" > /dev/null 2>&1; then
 		echo "Error: 'git push -u ${pr_remote[$i]} $b' failed:" >&2

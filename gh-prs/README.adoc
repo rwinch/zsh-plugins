@@ -4,7 +4,7 @@ A zsh plugin that pushes the feature branches made by link:../git-branches/merge
 
 == Features
 
-* `gh-prs create` pushes `feature/<branch>/FEATURE` for every branch and creates a pull request into `<branch>`, oldest branch first
+* `gh-prs create` pushes `feature/<branch>/FEATURE` for every branch and creates a pull request into `<branch>`, grouped as embargoed `lts`, OSS, embargoed `frozen` and embargoed `active`, oldest branch first inside a group (the original changes are created first, since the forward merges link to them)
 * The first pull request is the change itself, the others are forward merges that link to it. A branch whose tip is not a merge commit (the change was applied by hand) is an original change too: its title and body are those of its commit (no `Merge`, no `status: forward-port`), and the forward merges after it link to it
 * OSS branches go to your fork (the remote named after your GitHub login) when it exists, otherwise to the `oss` remote. Embargoed branches *must* go to the `commercial` remote, and the command fails when it does not exist
 * Running it again updates the open pull requests (`gh pr edit`) instead of creating new ones
@@ -158,7 +158,7 @@ $ gh-prs create --dry-run --yes
 Repositories: spring-projects/spring-security (remote oss), spring-projects/spring-security-commercial (remote commercial)
 Push remotes: OSS branches -> rwinch (your fork), embargoed branches -> commercial
 
-Pull requests for feature 'bug1' (oldest first):
+Pull requests for feature 'bug1' (lts, oss, frozen, active):
   (1) feature/7.0.x/bug1  ->  7.0.x   spring-projects/spring-security   create
         push:      git push -u rwinch feature/7.0.x/bug1
         head:      rwinch:feature/7.0.x/bug1
