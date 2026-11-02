@@ -61,6 +61,7 @@ git branches-merge-forward [OPTIONS] --feature FEATURE BRANCH1 BRANCH2 [BRANCH3 
 | `--ours` | `-o` | Record across hops with `git merge -s ours` (nothing is carried, so there are no conflicts). Down hops stay real merges.
 | `--embargoed` | `-e` | The arguments are OSS generation branches, oldest to newest. One generation is enough.
 | `--feature FEATURE` | `-f` | Merge feature branches instead of the branches. `feature/<branch>/FEATURE` is created from every branch, and the chain is merged between them. See <<feature-branches,Feature branches>>.
+| `--force` | `-F` | With `--feature`: reuse feature branches that already exist (they are merged into as they are) instead of reporting them as problems. Missing ones are still created. `git rerere` is on for the merges. See <<force,Existing feature branches>>.
 | `--fork-remote REMOTE` | | With `--feature`: the remote the feature branches of non-embargoed branches are pushed to. Default: your GitHub login (from `gh api user`), the name `git-clone-convention` gives your fork.
 | `--pause` | `-P` | After each merge, stop so that the result can be validated, and say which directory to do it in.
 | `--help` | `-h` | Display the help message.
@@ -169,6 +170,24 @@ Dry run: nothing was changed. At the end it would print:
 * *Upstreams.* The feature branches are created without an upstream. The push commands that are printed use `-u`, so the upstream is the remote you push to: your fork for non-embargoed branches (`--fork-remote`, by default your GitHub login), and the upstream remote of the branch (`commercial`) for the embargoed ones. Nothing is pushed.
 * *Validation.* The branches are validated as usual (clean worktrees, up to date with their upstreams). The first branch may be ahead, and the feature branches then carry those commits. A feature branch whose name is taken, or collides with a branch that is also a directory in the name (a branch called `feature`), is reported with the other problems.
 * `--ours`, `--pause` and `--dry-run` work as before.
+
+[[force]]
+=== Existing feature branches (`--force`)
+
+Without `--force` an existing feature branch is a problem. With it the branch is used as it is, and a missing one is still created from its base. This is for bringing feature branches that already exist up to date, for example after the first one was rebased onto the new tip of its upstream:
+
+[source,bash]
+----
+git fetch commercial
+git rebase commercial/embargoed/lts/5.7.x feature/embargoed/lts/5.7.x/bug1
+git branches-merge-forward --feature bug1 --force \
+    embargoed/lts/5.7.x embargoed/lts/5.8.x embargoed/lts/6.4.x
+----
+
+* Hops are judged from the feature branches, so a feature branch that already contains its source is `up to date`.
+* A feature branch has no upstream, so existing ones are not compared with one. Their worktrees must still be clean. For an embargoed base the base branch needs an upstream, because it gives the remote that the feature branch is pushed to.
+* `rerere.enabled` and `rerere.autoupdate` are on for every merge of the run. A conflict that was recorded before is resolved and staged by itself, and when that settles every file the merge is committed (`rerere: reused a recorded resolution for N file(s)`). Otherwise the usual conflict prompt appears for the files that are left, and the resolution you commit is recorded for the next run.
+* Nothing is learned from merges that were resolved before `--force` was used (nothing recorded them). The first conflict is resolved by hand, later runs reuse it. Conflicts are not repeated when the same change is already on both sides (the old merge carries the old commits of the rebased branch), only when the same hunks conflict again.
 
 === `gbbmfa` on a feature branch
 

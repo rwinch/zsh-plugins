@@ -346,6 +346,73 @@ t "feature: an existing feature branch is a problem, with a hint for the first" 
 	git -C $W rev-parse -q --verify feature/7.0.x/bug1 > /dev/null
 '
 
+t "feature: --force only applies with --feature" '
+	run --force 7.0.x main; expect_rc 1; expect_out "only applies with --feature"
+'
+
+t "feature: --force reuses existing feature branches and creates the missing ones" '
+	git -C $W branch feature/7.0.x/bug1 7.0.x
+	git -C $W branch feature/main/bug1 main
+	commit_on $W feature/7.0.x/bug1 fix.txt
+	git -C $W checkout -q 7.0.x
+	run --force --feature bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	has_file feature/main/bug1 fix.txt
+	contains feature/7.0.x/bug1 feature/main/bug1
+	not_contains feature/7.0.x/bug1 main
+	[[ $(branch_of $W) == 7.0.x ]]
+	reject_out "Creating"
+	reject_out "Created:"
+	expect_out "git push --atomic -u fork"
+'
+
+t "feature: --force dry run shows reused and new feature branches" '
+	git -C $W branch feature/7.0.x/bug1 7.0.x
+	commit_on $W feature/7.0.x/bug1 fix.txt
+	git -C $W checkout -q 7.0.x
+	run -n --force --feature bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	expect_out "existing ones are reused"
+	expect_out "feature/7.0.x/bug1 +already exists, used as it is"
+	expect_out "feature/main/bug1 +from main"
+	expect_out "Plan \\(rerere is on"
+	expect_out "\\(1\\) feature/7.0.x/bug1 -> feature/main/bug1 +across merge would merge"
+	! git -C $W rev-parse -q --verify feature/main/bug1 > /dev/null
+'
+
+t "feature: --force judges hops from the feature branches (already merged is up to date)" '
+	git -C $W branch feature/7.0.x/bug1 7.0.x
+	git -C $W branch feature/main/bug1 main
+	commit_on $W feature/7.0.x/bug1 fix.txt
+	git -C $W checkout -q feature/main/bug1
+	git -C $W merge -q --no-edit feature/7.0.x/bug1
+	git -C $W checkout -q 7.0.x
+	run --force --feature bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	expect_out "Everything is up to date"
+'
+
+t "feature: --force resolves a conflict that was resolved before with rerere" '
+	git -C $W branch feature/7.0.x/bug1 7.0.x
+	git -C $W branch feature/main/bug1 main
+	git -C $W checkout -q feature/7.0.x/bug1
+	echo A > $W/f; git -C $W commit -qam "A"
+	git -C $W checkout -q feature/main/bug1
+	echo M > $W/f; git -C $W commit -qam "M"
+	pre=$(git -C $W rev-parse HEAD)
+	# the first merge, resolved by hand with rerere recording it
+	git -C $W -c rerere.enabled=true merge --no-edit feature/7.0.x/bug1 > /dev/null 2>&1 || true
+	echo AM > $W/f; git -C $W add f
+	git -C $W -c rerere.enabled=true commit -q --no-edit
+	# the merge is thrown away, as if the branches had been rewritten
+	git -C $W reset -q --hard $pre
+	git -C $W checkout -q 7.0.x
+	run --force --feature bug1 --fork-remote fork 7.0.x main; expect_rc 0
+	expect_out "rerere: reused a recorded resolution for 1 file"
+	expect_out "resolved with rerere"
+	[[ "$(git -C $W show feature/main/bug1:f)" == AM ]]
+	contains feature/7.0.x/bug1 feature/main/bug1
+	[[ -z "$(git -C $W status --porcelain)" ]]
+	[[ $(branch_of $W) == 7.0.x ]]
+'
+
 t "feature: a branch that is also a directory of the name is a problem" '
 	git -C $W branch feature main
 	run -f bug1 --fork-remote fork 7.0.x main; expect_rc 1

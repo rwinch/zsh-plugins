@@ -14,6 +14,7 @@ opts=(
 	'(-o --ours)'{-o,--ours}'[record across hops with git merge -s ours]'
 	'(-e --embargoed)'{-e,--embargoed}'[arguments are OSS generation branches, also merge embargoed branches]'
 	'(-f --feature)'{-f,--feature}'[merge feature branches feature/<branch>/FEATURE instead of the branches]:feature name: '
+	'(-F --force)'{-F,--force}'[with --feature: reuse feature branches that exist, with rerere]'
 	'--fork-remote[remote for the feature branches of non-embargoed branches]:remote:_remotes'
 	'(-P --pause)'{-P,--pause}'[stop after each merge so the result can be validated]'
 	'(-h --help)'{-h,--help}'[show this help message]'

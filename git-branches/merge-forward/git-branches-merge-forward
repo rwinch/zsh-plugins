@@ -7,6 +7,7 @@ ours=0                   # --ours
 embargoed=0              # --embargoed
 pause_after_merge=0      # --pause
 feature=""               # --feature
+force=0                  # --force (with --feature)
 fork_remote=""           # --fork-remote
 typeset -a branches      # positional args, in order
 
@@ -30,6 +31,7 @@ typeset -A feat_of       # base branch -> its feature branch (--feature)
 typeset -A feat_base     # feature branch -> its base branch
 typeset -A twin_created  # feature branch -> 1 once it exists
 start_existing=0         # 1 when the run starts on the first feature branch
+typeset -A twin_existing  # base branch -> 1 when its feature branch exists and is reused
 
 invoke_dir=""
 original_ref=""
@@ -44,6 +46,7 @@ usage() {
 Usage: git-branches-merge-forward [OPTIONS] BRANCH1 [BRANCH2 ...]
        git-branches-merge-forward [OPTIONS] --embargoed GENERATION [GENERATION ...]
        git-branches-merge-forward [OPTIONS] --feature FEATURE BRANCH1 [BRANCH2 ...]
+       git-branches-merge-forward [OPTIONS] --feature FEATURE --force BRANCH1 [BRANCH2 ...]
 
 Merge a chain of branches forward: BRANCH1 -> BRANCH2 -> ... Each branch is
 merged in the worktree that has it checked out, or in the directory you run
@@ -80,6 +83,13 @@ OPTIONS:
                        feature branch it is the start. Nothing is pushed; the push
                        commands (to your fork, or the upstream remote for embargoed
                        branches) are printed at the end.
+  --force, -F          With --feature: reuse feature branches that already exist
+                       (they are merged into as they are) instead of reporting them
+                       as problems; missing ones are still created. 'git rerere' is
+                       on for the merges, so a conflict resolved before is resolved
+                       again by itself, for example after the first feature branch
+                       was rebased. Feature branches have no upstream, so they are
+                       not compared with one.
   --fork-remote REMOTE
                        The remote that gets the feature branches of non-embargoed
                        branches (default: your GitHub login, from 'gh api user')
@@ -94,6 +104,7 @@ EXAMPLES:
   git-branches-merge-forward --embargoed 7.0.x main
   git-branches-merge-forward -n -e 7.0.x main
   git-branches-merge-forward --feature bug1 7.0.x 7.1.x main
+  git-branches-merge-forward --feature bug1 --force 7.0.x 7.1.x main   # the feature branches exist
   git-branches-merge-forward \$(svaob)   # svaob (spring-versions): the OSS branches on one line
 
 DEPENDENCY UPDATES:
@@ -246,10 +257,16 @@ plan_name() {
 	fi
 }
 
-# The ref a branch is compared as: the existing first feature branch when the run
-# starts on it (it holds the work), otherwise the branch itself.
+# 1 when the feature branch of the base branch exists and is used as it is (the
+# first one when the run starts on it, any with --force).
+is_existing() {
+	(( ${+twin_existing[$1]} ))
+}
+
+# The ref a branch is compared as: its existing feature branch (it holds the work),
+# otherwise the branch itself.
 eval_ref() {
-	if (( start_existing )) && [[ "$1" == "$chain_first" ]]; then
+	if is_existing "$1"; then
 		echo "${feat_of[$1]}"
 	else
 		echo "$1"
@@ -379,20 +396,29 @@ validate_local() {
 
 	for b in "${all_branches[@]}"; do
 		if [[ -n "$feature" ]]; then
-			if (( start_existing )) && [[ "$b" == "$chain_first" ]]; then
-				# the run starts on its feature branch: that directory is the one that is touched
-				dir_label[$invoke_dir]="${dir_label[$invoke_dir]:+${dir_label[$invoke_dir]}, }${feat_of[$b]}"
+			if is_existing "$b"; then
+				# the feature branch is used as it is: the directory it is (or will be) checked out in is touched
+				if (( start_existing )) && [[ "$b" == "$chain_first" ]]; then
+					d="$invoke_dir"
+				else
+					d=$(resolve_dir_for_branch "${feat_of[$b]}")
+				fi
+				dir_label[$d]="${dir_label[$d]:+${dir_label[$d]}, }${feat_of[$b]}"
 				r=$(git config "branch.$b.remote")
 				m=$(git config "branch.$b.merge")
 				if [[ -n "$r" && -n "$m" && "$r" != "." ]]; then
 					up_remote[$b]="$r"
 					up_branch[$b]="${m#refs/heads/}"
+				elif (( force )) && is_embargoed_branch "$b"; then
+					problem "$b: no upstream, so the remote of ${feat_of[$b]} is not known${nl}git branch --set-upstream-to=<remote>/$b $b"
 				fi
 				continue
 			fi
 			if m=$(feature_conflict "${feat_of[$b]}"); then
 				if [[ "$b" == "$chain_first" ]] && branch_exists "${feat_of[$b]}"; then
-					m="$m (to start from it, check it out in $invoke_dir and run again)"
+					m="$m (to start from it, check it out in $invoke_dir and run again, or use --force)"
+				elif branch_exists "${feat_of[$b]}"; then
+					m="$m (use --force to merge into it as it is)"
 				fi
 				problem "${feat_of[$b]}: $m"
 			fi
@@ -424,7 +450,7 @@ validate_remote_refs() {
 	local b
 	for b in "${all_branches[@]}"; do
 		[[ -z "${up_remote[$b]}" ]] && continue
-		(( start_existing )) && [[ "$b" == "$chain_first" ]] && continue
+		is_existing "$b" && continue
 		if ! git show-ref --verify --quiet "refs/remotes/${up_remote[$b]}/${up_branch[$b]}"; then
 			problem "$b: upstream '$(upstream_display $b)' no longer exists on the remote (gone)${nl}git branch --set-upstream-to=<remote>/$b $b${nl}or: git push -u <remote> $b"
 		fi
@@ -436,7 +462,7 @@ check_up_to_date() {
 	local b allowed unpushed
 	for b in "${all_branches[@]}"; do
 		[[ -z "${up_remote[$b]}" ]] && continue
-		(( start_existing )) && [[ "$b" == "$chain_first" ]] && continue
+		is_existing "$b" && continue
 		git show-ref --verify --quiet "refs/remotes/${up_remote[$b]}/${up_branch[$b]}" || continue
 		ahead_behind "$b"
 		[[ "$ab_behind" -eq 0 && "$ab_ahead" -eq 0 ]] && continue
@@ -463,7 +489,7 @@ evaluate_plan() {
 	local i b
 	changed=()
 	for (( i = 1; i <= ${#hop_source[@]}; i++ )); do
-		if git merge-base --is-ancestor "refs/heads/$(eval_ref "${hop_source[$i]}")" "refs/heads/${hop_target[$i]}"; then
+		if git merge-base --is-ancestor "refs/heads/$(eval_ref "${hop_source[$i]}")" "refs/heads/$(eval_ref "${hop_target[$i]}")"; then
 			hop_noop[$i]=1
 		else
 			hop_noop[$i]=0
@@ -490,11 +516,17 @@ print_feature_branches() {
 	for b in "${all_branches[@]}"; do
 		(( ${#feat_of[$b]} > w )) && w=${#feat_of[$b]}
 	done
-	echo "Feature branches (created from their base, no upstream until pushed):"
+	if (( force )); then
+		echo "Feature branches (existing ones are reused, new ones are created from their base, no upstream until pushed):"
+	else
+		echo "Feature branches (created from their base, no upstream until pushed):"
+	fi
 	for b in "${all_branches[@]}"; do
 		twin="${feat_of[$b]}"
 		if (( start_existing )) && [[ "$b" == "$chain_first" ]]; then
 			printf '  %-*s  already exists (current branch), used as the start\n' "$w" "$twin"
+		elif is_existing "$b"; then
+			printf '  %-*s  already exists, used as it is\n' "$w" "$twin"
 		else
 			printf '  %-*s  from %s\n' "$w" "$twin" "$b"
 		fi
@@ -514,7 +546,11 @@ print_plan() {
 	[[ -n "$feature" ]] && print_feature_branches
 
 	if (( ${#hop_source[@]} > 0 )); then
-		echo "Plan:"
+		if (( force )); then
+			echo "Plan (rerere is on, so conflict resolutions that were recorded are reused):"
+		else
+			echo "Plan:"
+		fi
 		for (( i = 1; i <= ${#hop_source[@]}; i++ )); do
 			mode=merge
 			[[ $ours -eq 1 && "${hop_kind[$i]}" == across ]] && mode=ours
@@ -657,7 +693,7 @@ pause_for_validation() {
 # ---------------------------------------------------------------------------
 merge_branch() {
 	local source="$1" target="$2" kind="$3" base_source="${4:-$1}" base_target="${5:-$2}"
-	local dir current rc
+	local dir current rc output resolved
 	local msg_source="${base_source#embargoed/*/}" msg_target="${base_target#embargoed/*/}"
 	local -a cmd
 
@@ -687,10 +723,34 @@ merge_branch() {
 			cmd=(git -C "$dir" merge --no-edit "$source")
 		fi
 
-		"${cmd[@]}"
-		rc=$?
+		resolved=0
+		if (( force )); then
+			# rerere reuses the conflict resolutions that were recorded before and stages them
+			cmd=("${(@)cmd[1,3]}" -c rerere.enabled=true -c rerere.autoupdate=true "${(@)cmd[4,-1]}")
+			output=$("${cmd[@]}" 2>&1)
+			rc=$?
+			print -r -- "$output"
+			resolved=${#${(M)${(f)output}:#(Resolved|Staged) * using previous resolution*}}
+		else
+			"${cmd[@]}"
+			rc=$?
+		fi
 
 		if git -C "$dir" rev-parse -q --verify MERGE_HEAD > /dev/null 2>&1; then
+			if (( force )) && (( resolved )) && [[ -z "$(git -C "$dir" diff --name-only --diff-filter=U)" ]]; then
+				echo "  rerere: reused a recorded resolution for $resolved file(s)"
+				if git -C "$dir" -c rerere.enabled=true commit --no-edit > /dev/null; then
+					echo "✓ Merged '$source' into '$target' (dir: $dir), resolved with rerere"
+					if [[ $pause_after_merge -eq 1 ]]; then
+						pause_for_validation "$dir" "merging '$source' into '$target'"
+					fi
+					return 0
+				fi
+				echo "✗ Could not commit the merge of '$source' into '$target'" >&2
+				prompt_retry "$dir"
+				continue
+			fi
+			(( force )) && (( resolved )) && echo "  rerere: reused a recorded resolution for $resolved file(s), the rest is yours"
 			handle_conflict "$dir" "$source" "$target"
 			break
 		fi
@@ -734,10 +794,12 @@ print_feature_summary() {
 	local b i dirs=0
 	local -a created
 	for b in "${all_branches[@]}"; do
-		(( start_existing )) && [[ "$b" == "$chain_first" ]] && continue
+		is_existing "$b" && continue
 		created+=("${feat_of[$b]}")
 	done
-	echo "Created: ${(j:, :)created}"
+	if (( ${#created[@]} )); then
+		echo "Created: ${(j:, :)created}"
+	fi
 
 	build_worktree_map
 	for b in "${all_branches[@]}"; do
@@ -782,6 +844,7 @@ while [[ $# -gt 0 ]]; do
 		--ours|-o) ours=1; shift ;;
 		--embargoed|-e) embargoed=1; shift ;;
 		--pause|-P) pause_after_merge=1; shift ;;
+		--force|-F) force=1; shift ;;
 		--feature|-f)
 			[[ $# -ge 2 && -n "$2" && "$2" != -* ]] || usage_error "$1 needs a FEATURE name"
 			feature="$2"; shift 2 ;;
@@ -811,6 +874,8 @@ if [[ -n "$feature" ]]; then
 	git check-ref-format --branch "feature/x/$feature" > /dev/null 2>&1 || usage_error "'$feature' is not a valid branch name part"
 elif [[ -n "$fork_remote" ]]; then
 	usage_error "--fork-remote only applies with --feature"
+elif (( force )); then
+	usage_error "--force only applies with --feature"
 fi
 
 typeset -A seen_arg
@@ -857,7 +922,16 @@ if [[ -n "$feature" ]]; then
 	# already on the first feature branch: it is the start, nothing is created for it
 	if [[ $original_detached -eq 0 && "$original_ref" == "${feat_of[$chain_first]}" ]]; then
 		start_existing=1
+		twin_existing[$chain_first]=1
 		twin_created[${feat_of[$chain_first]}]=1
+	fi
+	# --force: every other feature branch that exists is used as it is
+	if (( force )); then
+		for b in "${all_branches[@]}"; do
+			branch_exists "${feat_of[$b]}" || continue
+			twin_existing[$b]=1
+			twin_created[${feat_of[$b]}]=1
+		done
 	fi
 fi
 
