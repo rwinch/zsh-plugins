@@ -108,7 +108,7 @@ gh-prs checks --watch && notify-send "gh-prs" "All checks passed" || notify-send
 [%header,cols="1,3"]
 |===
 | | Default
-| Title | First PR: the subject of the commit on the first feature branch. The others: `Merge <title of the first PR>`
+| Title | First PR: the subject of the commit on the first feature branch. The others: the same title, never prefixed with `Merge`
 | Body | First PR: the description of the commit. The others: `Forward merge of gh-N`, where `N` is the number of the first PR (`<owner>/<repo>#N` when the first PR is in another repository, as for embargoed branches)
 | Assignee | `@me`
 | Labels | `status: forward-port` on every PR except the first
@@ -121,7 +121,7 @@ Pull requests into `embargoed/frozen/<generation>` and `embargoed/active/<genera
 |===
 | | Default
 | Milestone | None. An explicit `--milestone` is still applied, and a re-run does not clear it
-| Title | `Merge <title of the first PR> into <base branch>`, so that the many similar pull requests can be told apart
+| Title | The same as the first PR, without `Merge`
 | Body | `Merge of <PR> into <base branch>`. For `embargoed/frozen/G` the PR is the OSS pull request of the same generation (`spring-projects/spring-security#N`), for `embargoed/active/G` the frozen pull request of that generation (`#N`)
 |===
 
@@ -166,7 +166,7 @@ Pull requests for feature 'bug1' (lts, oss, frozen, active):
         body:      Longer description of the fix.
         assignee:  @me   milestone: 7.0.9   labels: (none)
   (2) feature/main/bug1  ->  main   spring-projects/spring-security   create
-        title:     Merge Fix CookieRequestCache parameters
+        title:     Fix CookieRequestCache parameters
         body:      Forward merge of gh-<number of PR 1>
         assignee:  @me   milestone: 7.2.0   labels: status: forward-port
 ...

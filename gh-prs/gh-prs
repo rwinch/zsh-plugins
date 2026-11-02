@@ -71,7 +71,7 @@ PUSHING:
                       ever used)
 
 DEFAULTS (every one can be given as an option):
-  title      first PR: subject of the commit; the others: 'Merge <title of the first PR>'
+  title      first PR: subject of the commit; the others: the same title
   body       first PR: description of the commit; the others: 'Forward merge of gh-N'
              (N is the number of the first PR, owner/repo#N when it is in another repo)
   assignee   @me
@@ -79,7 +79,7 @@ DEFAULTS (every one can be given as an option):
   milestone  the version= of gradle.properties on the base branch, without -SNAPSHOT
              (it must exist and be open in the repository)
   embargoed  the PRs into embargoed/frozen/G and embargoed/active/G have no milestone (the
-             OSS PR has it), the title is 'Merge <title> into <branch>' and the body
+             OSS PR has it), the title is the same and the body
              'Merge of <PR> into <branch>': the OSS PR of the generation for frozen, the
              frozen PR for active
   If no 'in: *' or 'type: *' label is given (and no existing PR has one) you are asked
@@ -1068,14 +1068,7 @@ pr_ref() {
 }
 
 pr_title_of() {
-	local p="${pr_parent[$1]}"
-	if (( pr_origin[$1] )); then
-		echo "${own_title[$1]}"
-	elif (( pr_source[$1] > 0 )); then
-		echo "Merge ${own_title[$p]} into ${pr_base[$1]}"
-	else
-		echo "Merge ${own_title[$p]}"
-	fi
+	echo "${own_title[${pr_parent[$1]}]}"
 }
 
 pr_body_of() {

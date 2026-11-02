@@ -268,8 +268,8 @@ t "defaults: first PR from the commit, forward PRs link to it" '
 	# 7.0.x first
 	called "pr create -R acme/proj --base 7.0.x --head me:feature/7.0.x/bug1 --title Fix the thing --body Longer description of the fix. --assignee @me --milestone 7.0.9"
 	not_called "--base 7.0.x --head me:feature/7.0.x/bug1 --title Fix the thing --body Longer description of the fix. --assignee @me --label"
-	called "pr create -R acme/proj --base main --head me:feature/main/bug1 --title Merge Fix the thing --body Forward merge of gh-100 --assignee @me --label status: forward-port --milestone 7.2.0"
-	called "pr create -R acme/proj-commercial --base embargoed/frozen/7.0.x --head feature/embargoed/frozen/7.0.x/bug1 --title Merge Fix the thing into embargoed/frozen/7.0.x --body Merge of acme/proj#100 into embargoed/frozen/7.0.x --assignee @me --label status: forward-port"
+	called "pr create -R acme/proj --base main --head me:feature/main/bug1 --title Fix the thing --body Forward merge of gh-100 --assignee @me --label status: forward-port --milestone 7.2.0"
+	called "pr create -R acme/proj-commercial --base embargoed/frozen/7.0.x --head feature/embargoed/frozen/7.0.x/bug1 --title Fix the thing --body Merge of acme/proj#100 into embargoed/frozen/7.0.x --assignee @me --label status: forward-port"
 	[[ "$(grep -F "proj-commercial --base" $CALLS)" != *--milestone* ]]
 	pushed fork feature/7.0.x/bug1
 	pushed fork feature/main/bug1
@@ -371,10 +371,10 @@ t "embargoed: every PR links the PR of its own generation and none gets a milest
 	run create --yes; expect_rc 0
 	local oss70=$(num_of 7.0.x) oss71=$(num_of 7.1.x) f70=$(num_of embargoed/frozen/7.0.x) f71=$(num_of embargoed/frozen/7.1.x)
 	[[ -n $oss70 && -n $oss71 && -n $f70 && -n $f71 ]]
-	called "--base embargoed/frozen/7.0.x --head feature/embargoed/frozen/7.0.x/bug1 --title Merge Fix the thing into embargoed/frozen/7.0.x --body Merge of acme/proj#$oss70 into embargoed/frozen/7.0.x"
-	called "--base embargoed/frozen/7.1.x --head feature/embargoed/frozen/7.1.x/bug1 --title Merge Fix the thing into embargoed/frozen/7.1.x --body Merge of acme/proj#$oss71 into embargoed/frozen/7.1.x"
-	called "--base embargoed/active/7.0.x --head feature/embargoed/active/7.0.x/bug1 --title Merge Fix the thing into embargoed/active/7.0.x --body Merge of #$f70 into embargoed/active/7.0.x"
-	called "--base embargoed/active/7.1.x --head feature/embargoed/active/7.1.x/bug1 --title Merge Fix the thing into embargoed/active/7.1.x --body Merge of #$f71 into embargoed/active/7.1.x"
+	called "--base embargoed/frozen/7.0.x --head feature/embargoed/frozen/7.0.x/bug1 --title Fix the thing --body Merge of acme/proj#$oss70 into embargoed/frozen/7.0.x"
+	called "--base embargoed/frozen/7.1.x --head feature/embargoed/frozen/7.1.x/bug1 --title Fix the thing --body Merge of acme/proj#$oss71 into embargoed/frozen/7.1.x"
+	called "--base embargoed/active/7.0.x --head feature/embargoed/active/7.0.x/bug1 --title Fix the thing --body Merge of #$f70 into embargoed/active/7.0.x"
+	called "--base embargoed/active/7.1.x --head feature/embargoed/active/7.1.x/bug1 --title Fix the thing --body Merge of #$f71 into embargoed/active/7.1.x"
 	[[ "$(grep -F "proj-commercial --base" $CALLS | grep -c -- --milestone)" == 0 ]]
 	[[ "$(grep -F "pr create -R acme/proj --base" $CALLS | grep -c -- --milestone)" == 3 ]]
 '
@@ -397,7 +397,7 @@ t "embargoed: a re-run edits the PR and leaves its milestone alone" '
 	prs acme/proj feature/7.0.x/bug1 7.0.x 100 OPEN "Fix the thing" me ""
 	prs acme/proj-commercial feature/embargoed/frozen/7.0.x/bug1 embargoed/frozen/7.0.x 300 OPEN old acme ""
 	run create --yes; expect_rc 0
-	called "pr edit 300 -R acme/proj-commercial --title Merge Fix the thing into embargoed/frozen/7.0.x --body Merge of acme/proj#100 into embargoed/frozen/7.0.x"
+	called "pr edit 300 -R acme/proj-commercial --title Fix the thing --body Merge of acme/proj#100 into embargoed/frozen/7.0.x"
 	[[ "$(grep -F "pr edit 300" $CALLS)" != *--milestone* ]]
 '
 
@@ -436,8 +436,8 @@ t "labels: asks for in:/type: labels, once per repository, applied to that repos
 	expect_out "No .in: \*. or .type: \*. label was given. Labels of acme/proj"
 	expect_out "1\) in: config|1\) in: web"
 	called "--head me:feature/7.0.x/bug1 --title Fix the thing --body Longer description of the fix. --assignee @me --label in: web --label type: bug --milestone 7.0.9"
-	called "--head me:feature/main/bug1 --title Merge Fix the thing --body Forward merge of gh-100 --assignee @me --label status: forward-port --label in: web --label type: bug --milestone 7.2.0"
-	called "--head feature/embargoed/frozen/7.0.x/bug1 --title Merge Fix the thing into embargoed/frozen/7.0.x --body Merge of acme/proj#100 into embargoed/frozen/7.0.x --assignee @me --label status: forward-port --label type: bug"
+	called "--head me:feature/main/bug1 --title Fix the thing --body Forward merge of gh-100 --assignee @me --label status: forward-port --label in: web --label type: bug --milestone 7.2.0"
+	called "--head feature/embargoed/frozen/7.0.x/bug1 --title Fix the thing --body Merge of acme/proj#100 into embargoed/frozen/7.0.x --assignee @me --label status: forward-port --label type: bug"
 '
 
 t "labels: not asked with --yes, with an in: or type: label given, or when a PR has one" '
