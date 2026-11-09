@@ -9,7 +9,7 @@ A zsh plugin that shows the state of the GitHub Actions of a repository for ever
 antigen bundle rwinch/zsh-plugins gh-actions-status
 ----
 
-Or manually by adding the plugin directory to your `PATH`. The plugin defines the alias `ghas` for `gh-actions-status`.
+Or manually by adding the plugin directory to your `PATH`. The plugin defines the alias `ghas` for `gh-actions-status`. It also defines `ghasa`, which shows only the failures (`-s failure`) of spring-security and spring-session, each followed by its commercial repository. Other options work as for `ghas`. `-s STATUS` replaces the default status and `--all` shows everything.
 
 == Usage
 
