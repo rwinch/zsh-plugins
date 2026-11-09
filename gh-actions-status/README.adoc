@@ -1,0 +1,98 @@
+= gh-actions-status
+
+A zsh plugin that shows the state of the GitHub Actions of a repository for every branch and workflow at once: the latest run, the last success and the last failure. GitHub has no such view, and with many branches and workflows it is hard to see what is red.
+
+== Installation
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins gh-actions-status
+----
+
+Or manually by adding the plugin directory to your `PATH`. The plugin defines the alias `ghas` for `gh-actions-status`.
+
+== Usage
+
+[source,bash]
+----
+gh-actions-status [OPTIONS] [OWNER/REPO...]
+----
+
+Pass one or more `OWNER/REPO` to show several repositories, one section each in the order given. Without any, the repository is the directory you are in when it is below `~/code/OWNER/REPO` (so `~/code/spring-projects/spring-security/7.0.x` is `spring-projects/spring-security`), otherwise the repository of the current directory.
+
+=== Commercial repository
+
+When you do not pass any `OWNER/REPO`, the commercial repository is shown after the OSS one: the `commercial` remote of the current checkout, else `OWNER/REPO-commercial`. It is only shown when it exists and you can access it, otherwise it is skipped silently. With `OWNER/REPO` arguments the commercial repositories are not added, use `--commercial-repo` for that.
+
+Its branches are ordered `embargoed/active/*`, `embargoed/frozen/*`, `embargoed/lts/*` (each with `main` first and then the newest `N.N.x`) and then the others, and `--supported` keeps `main`, `N.N.x` and `embargoed/{active,frozen,lts}/` of those.
+
+[source,text]
+----
+$ ghas
+spring-projects/spring-security  (500 runs scanned)
+
+main
+  WORKFLOW                  STATUS        LAST SUCCESS   LAST FAILURE
+  CI                        ✘ ● running   1d ago         6h ago
+  Dependabot Updates        ✘             3d ago         3h ago
+  Deploy Docs               ✔             36m ago        -
+
+7.1.x
+  WORKFLOW      STATUS       LAST SUCCESS   LAST FAILURE
+  CI            ✔ ◌ queued   10h ago        -
+----
+
+*STATUS* is the icon of the last completed run (`✔` success, `✘` failure, `○` cancelled or skipped), followed by the current state when a newer run has not completed (`● running`, `◌ queued`, `⏸ needs approval`). So `✘ ● running` is a workflow that was red and is running again. *LAST SUCCESS* and *LAST FAILURE* are the age of the last run with that result, or `-` when there is none in the runs that were scanned. Colors are used on a terminal and turned off by `NO_COLOR`.
+
+Branches are ordered `main`, the `N.N.x` branches (newest first) and then the others.
+
+=== Options
+
+[%header,cols="2,6"]
+|===
+| Option | Description
+| `-s`, `--status STATUS` | `success`, `failure`, `cancelled`, `skipped`, `running`, `queued` or `action_required`. Matches either part of STATUS, so `-s failure` also finds a workflow that failed and is running again. Repeatable or comma separated
+| `-w`, `--workflow NAME` | Workflow name or file name, a case insensitive substring. Repeatable
+| `-b`, `--branch NAME` | Branch, globs allowed (`-b '7.*.x'`). Repeatable
+| `-e`, `--event EVENT` | Only runs of this event, for example `push` hides the pull request and Dependabot noise
+| `--supported` | Only `main` and the `N.N.x` branches, and `embargoed/{active,frozen,lts}/` of those
+| `--no-commercial` | Do not show the commercial repository
+| `--commercial-only` | Show only the commercial repository
+| `--commercial-repo OWNER/REPO` | The commercial repository, shown last, also when `OWNER/REPO` arguments are given
+| `-g`, `--group-by KEY` | `branch` (default), `status`, `workflow` or `none` for one flat table. Status groups are ordered failure, success, cancelled or skipped, and no completed run
+| `-L`, `--limit N` | Runs to scan, 500 by default and 1000 at most
+| `-o`, `--open [WHICH]` | Open the runs of the listed rows in the browser instead of printing the table. `WHICH` is a comma separated list of `latest`, `success` and `failure` (default all three). A URL that is two of them is opened once. Asks first above 5 URLs
+| `-y`, `--yes` | Do not ask before opening more than 5 URLs
+| `--json` | One entry per repository (`repo`), with its rows nested by group unless `-g none`
+|===
+
+=== Examples
+
+[source,bash]
+----
+ghas --supported                      # only main and the N.N.x branches
+ghas -s failure                       # what is red
+ghas -s failure,running -e push       # red or running, ignoring pull requests
+ghas -w CI --supported -g none        # CI on every supported branch as one table
+ghas -g status --supported            # failures first
+ghas -g workflow                      # the branches of each workflow
+ghas -s failure --supported -o        # open the newest, last success and last failure runs of what is red
+ghas -s failure -o failure            # only the failing runs
+ghas spring-projects/spring-boot      # another repository
+ghas spring-projects/spring-session spring-projects/spring-authorization-server -s failure   # several
+ghas --commercial-only -s failure     # only the commercial repository
+ghas --no-commercial                  # only the OSS repository
+----
+
+== Completion
+
+zsh completion is included. It completes the options, the statuses, the workflows and branches of the repository (cached for five minutes in `~/.cache/gh-actions-status`) and `OWNER/REPO` (repeatable) from the directories in `~/code/*/*`.
+
+== Notes
+
+* The last success and last failure come from the same scan of the most recent runs. A workflow that has not run in a long time can show `-` even though an older run exists. Raise `--limit` to look further back.
+* A run that waits for approval (`action_required`) is shown as `⏸ needs approval` and is not counted as a completed run.
+
+== Requirements
+
+* `gh`, authenticated, and `jq`

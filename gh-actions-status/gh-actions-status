@@ -1,0 +1,446 @@
+#!/bin/zsh
+
+# ---- options ----
+typeset -a statuses workflows branches
+group_by=branch
+limit=500
+event=""
+supported=0
+open=0
+open_which="latest,success,failure"
+yes=0
+json=0
+typeset -a repo_args
+no_commercial=0
+commercial_only=0
+commercial_repo_arg=""
+
+usage() {
+	cat <<'USAGE'
+Usage: gh-actions-status [OPTIONS] [OWNER/REPO...]     (alias: ghas)
+
+Shows, per branch and workflow, the status (the icon of the last completed run, plus the
+current state when a newer run is in progress) and the age of the last success and failure.
+
+Pass one or more OWNER/REPO to show several repositories, one section each, in the order given.
+Without any, the repository is the directory you are in when it is below ~/code/OWNER/REPO,
+otherwise the repository of the current directory, and its commercial repository (the
+'commercial' remote of the current checkout, else OWNER/REPO-commercial) is shown after it when
+it exists and you can access it. With OWNER/REPO arguments the commercial repositories are not
+added; use --commercial-repo for that.
+
+Options:
+  -s, --status STATUS   success|failure|cancelled|skipped|running|queued|action_required
+                        (matches either part of STATUS; repeatable or comma separated)
+  -w, --workflow NAME   workflow name or file name, a substring (repeatable)
+  -b, --branch NAME     branch, globs allowed (repeatable)
+  -e, --event EVENT     push|pull_request|schedule|... (default: all)
+      --supported       only main and N.N.x branches (and embargoed/{active,frozen,lts}/ of those)
+      --no-commercial   do not show the commercial repository
+      --commercial-only show only the commercial repository
+      --commercial-repo OWNER/REPO
+                        the commercial repository, shown last, also when OWNER/REPO is given
+  -g, --group-by KEY    group rows by branch (default), status, workflow or none (flat table)
+  -L, --limit N         runs to scan (default 500, max 1000)
+  -o, --open [WHICH]    open the runs of the listed rows in the browser instead of printing the
+                        table. WHICH is a comma separated list of latest,success,failure
+                        (default: all three)
+  -y, --yes             do not ask before opening more than 5 URLs
+      --json            rows as JSON, one entry per repository (nested by group unless -g none)
+  -h, --help            show this help message
+
+STATUS is the icon of the last completed run (✔ success, ✘ failure, ○ cancelled or skipped)
+followed by the current state when a newer run has not completed (● running, ◌ queued,
+⏸ needs approval).
+USAGE
+}
+
+die() {
+	print -u2 -r -- "gh-actions-status: $*"
+	exit 2
+}
+
+# ---- parse ----
+while (( $# )); do
+	case $1 in
+		-h|--help) usage; exit 0 ;;
+		-s|--status|-w|--workflow|-b|--branch|-e|--event|-g|--group-by|-L|--limit|--commercial-repo)
+			(( $# >= 2 )) || die "$1 needs a value"
+			opt=$1; val=$2; shift 2 ;;
+		--status=*|--workflow=*|--branch=*|--event=*|--group-by=*|--limit=*|--commercial-repo=*)
+			opt=${1%%=*}; val=${1#*=}; shift ;;
+		--supported) supported=1; shift; continue ;;
+		--no-commercial) no_commercial=1; shift; continue ;;
+		--commercial-only) commercial_only=1; shift; continue ;;
+		-y|--yes) yes=1; shift; continue ;;
+		--json) json=1; shift; continue ;;
+		-o|--open)
+			open=1; shift
+			if [[ -n $1 && $1 =~ '^(latest|success|failure)(,(latest|success|failure))*$' ]]; then
+				open_which=$1; shift
+			fi
+			continue ;;
+		--open=*)
+			open=1; open_which=${1#*=}; shift
+			[[ $open_which =~ '^(latest|success|failure)(,(latest|success|failure))*$' ]] ||
+				die "--open takes latest, success and failure separated by commas"
+			continue ;;
+		-*) die "unknown option: $1 (see --help)" ;;
+		*)
+			[[ $1 == */* ]] || die "expected OWNER/REPO, got: $1"
+			repo_args+=($1); shift; continue ;;
+	esac
+	case $opt in
+		-s|--status) statuses+=(${(s:,:)val}) ;;
+		-w|--workflow) workflows+=($val) ;;
+		-b|--branch) branches+=($val) ;;
+		-e|--event) event=$val ;;
+		-g|--group-by) group_by=$val ;;
+		-L|--limit) limit=$val ;;
+		--commercial-repo) [[ $val == */* ]] || die "--commercial-repo expects OWNER/REPO"; commercial_repo_arg=$val ;;
+	esac
+done
+
+[[ $group_by == (branch|status|workflow|none) ]] || die "--group-by must be branch, status, workflow or none"
+[[ $limit == <-> ]] && (( limit >= 1 && limit <= 1000 )) || die "--limit must be between 1 and 1000"
+
+typeset -a want_status
+for s in $statuses; do
+	case $s in
+		success|failure|cancelled|skipped|queued) want_status+=($s) ;;
+		running|in_progress) want_status+=(running) ;;
+		action_required) want_status+=("needs approval") ;;
+		*) die "unknown status: $s (success, failure, cancelled, skipped, running, queued, action_required)" ;;
+	esac
+done
+
+(( no_commercial && commercial_only )) && die "--no-commercial and --commercial-only cannot be combined"
+command -v gh >/dev/null || die "gh is required"
+command -v jq >/dev/null || die "jq is required"
+
+# ---- repositories ----
+repo=""
+if (( ${#repo_args} == 0 )); then
+	rel=${PWD#$HOME/code/}
+	if [[ $rel != $PWD ]]; then
+		parts=(${(s:/:)rel})
+		(( ${#parts} >= 2 )) && repo="${parts[1]}/${parts[2]}"
+	fi
+	if [[ -z $repo ]]; then
+		repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) ||
+			die "not in ~/code/<owner>/<repo> and not a GitHub repository; pass OWNER/REPO"
+	fi
+	repo_args=($repo)
+	detect_commercial=1
+else
+	detect_commercial=0
+fi
+
+# the commercial repository: --commercial-repo, else (only without OWNER/REPO arguments) the
+# 'commercial' remote of the checkout, else <repo>-commercial. It is used when it can be accessed.
+commercial=""
+if (( ! no_commercial )); then
+	if [[ -n $commercial_repo_arg ]]; then
+		commercial=$commercial_repo_arg
+	elif (( detect_commercial )); then
+		url=$(git remote get-url commercial 2>/dev/null)
+		if [[ $url =~ 'github\.com[:/]([^/]+/[^/]+)$' ]]; then commercial=${match[1]%.git}; fi
+		[[ -n $commercial ]] || commercial="${repo}-commercial"
+	fi
+	if [[ -n $commercial ]] && ! gh api "repos/$commercial" --silent >/dev/null 2>&1; then
+		if [[ -n $commercial_repo_arg ]] || (( commercial_only )); then
+			die "cannot access the commercial repository $commercial"
+		fi
+		commercial=""
+	fi
+fi
+typeset -a repos
+if (( commercial_only )); then
+	[[ -n $commercial ]] || die "no commercial repository (pass --commercial-repo OWNER/REPO)"
+	repos=($commercial)
+else
+	repos=(${(u)repo_args})
+	[[ -n $commercial && ${repos[(Ie)$commercial]} -eq 0 ]] && repos+=($commercial)
+fi
+
+# ---- colors ----
+if [[ -t 1 && -z $NO_COLOR ]]; then
+	c_green=$'\e[32m'; c_red=$'\e[31m'; c_yellow=$'\e[33m'; c_dim=$'\e[2m'; c_bold=$'\e[1m'; c_off=$'\e[0m'
+else
+	c_green=""; c_red=""; c_yellow=""; c_dim=""; c_bold=""; c_off=""
+fi
+
+json_array() {
+	if (( $# == 0 )); then print '[]'; return; fi
+	printf '%s\n' "$@" | jq -R . | jq -sc .
+}
+
+# glob -> anchored regex
+typeset -a branch_rx
+for b in $branches; do
+	r=${b//./\\.}; r=${r//+/\\+}; r=${r//\*/.*}; r=${r//\?/.}
+	branch_rx+=("^${r}\$")
+done
+(( supported )) && branch_rx+=('^(main|[0-9]+\.[0-9]+\.x)$' '^embargoed/(active|frozen|lts)/(main|[0-9]+\.[0-9]+\.x)$')
+
+read -r -d '' jqprog <<'JQ'
+def age: ($now - fromdateiso8601) as $s
+  | if $s < 3600 then "\([$s/60|floor, 1] | max)m ago"
+    elif $s < 86400 then "\($s/3600|floor)h ago"
+    elif $s < 1209600 then "\($s/86400|floor)d ago"
+    elif $s < 5184000 then "\($s/604800|floor)w ago"
+    else "\($s/2592000|floor)mo ago" end;
+def brank:
+  if . == "main" then [0,0,0,""]
+  elif test("^[0-9]+\\.[0-9]+\\.x$") then (split(".") as $p | [1, -($p[0]|tonumber), -($p[1]|tonumber), ""])
+  elif test("^embargoed/(active|frozen|lts)/") then
+    (capture("^embargoed/(?<k>active|frozen|lts)/(?<b>.*)$") as $c
+      | [2 + (["active","frozen","lts"] | index($c.k))] + ($c.b | brank))
+  else [9,0,0,.] end;
+def failed: .conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure";
+def failed_name: . == "failure" or . == "timed_out" or . == "startup_failure";
+def norm:
+  if . == null then null
+  elif failed_name then "failure"
+  else . end;
+($wfs | map({key: (.id|tostring), value: (.path|split("/")|last)}) | from_entries) as $files
+| [ .[] | select(.headBranch != null and .headBranch != "") ]
+| group_by([.workflowName, .headBranch])
+| map(
+    sort_by(.createdAt) | reverse | . as $runs | $runs[0] as $n
+    | ([$runs[] | select(.status == "completed" and .conclusion != null and .conclusion != "action_required")] | first) as $c
+    | ([$runs[] | select(.conclusion == "success")] | first) as $s
+    | ([$runs[] | select(failed)] | first) as $f
+    | {
+        repo: $repo,
+        branch: $n.headBranch,
+        workflow: $n.workflowName,
+        file: ($files[($n.workflowDatabaseId|tostring)] // ""),
+        result: ($c.conclusion | norm),
+        current: (if $n.status == "in_progress" then "running"
+                  elif $n.status != "completed" then "queued"
+                  elif $n.conclusion == "action_required" then "needs approval"
+                  else null end),
+        success_age: (if $s then ($s.createdAt | age) else null end),
+        failure_age: (if $f then ($f.createdAt | age) else null end),
+        latest_url: $n.url,
+        success_url: $s.url,
+        failure_url: $f.url
+      }
+  )
+| map(select(
+    . as $r
+    | (($statuses | length) == 0
+        or any([$r.result, $r.current][]; . != null and ((. as $v | $statuses | index($v)) != null)))
+    and (($branches | length) == 0 or any($branches[]; . as $re | $r.branch | test($re)))
+    and (($workflows | length) == 0
+        or any($workflows[]; . as $q | (($r.workflow | ascii_downcase | contains($q | ascii_downcase))
+                                         or ($r.file | ascii_downcase | contains($q | ascii_downcase)))))
+  ))
+| map(. + {
+    gkey: (if $group == "branch" then (.branch | brank)
+           elif $group == "status" then [(if .result == "failure" then 0 elif .result == "success" then 1
+                                          elif .result == null then 3 else 2 end), (.result // "")]
+           elif $group == "workflow" then [.workflow]
+           else [0] end),
+    group: (if $group == "branch" then .branch
+            elif $group == "status" then (if .result == "failure" then "✘ failure"
+                                          elif .result == "success" then "✔ success"
+                                          elif .result == null then "no completed run"
+                                          else "○ \(.result)" end)
+            elif $group == "workflow" then .workflow
+            else "" end)
+  })
+| sort_by([.gkey, (.branch | brank), .workflow])
+| map(del(.gkey, .file))
+JQ
+
+# ---- fetch every repository ----
+typeset -A rows_of scanned_of lines_of
+now_epoch=$(date +%s)
+load_repo() {
+	local r=$1 runs wfs
+	local -a run_args jq_args
+	run_args=(run list -R $r -L $limit --json databaseId,workflowName,workflowDatabaseId,headBranch,status,conclusion,createdAt,url,event)
+	[[ -n $event ]] && run_args+=(--event $event)
+	runs=$(gh $run_args) || exit $?
+	wfs=$(gh workflow list -R $r -L 500 --json id,name,path) || exit $?
+	scanned_of[$r]=$(print -r -- $runs | jq length)
+	jq_args=(
+		--argjson now $now_epoch
+		--argjson wfs "$wfs"
+		--argjson statuses "$(json_array $want_status)"
+		--argjson branches "$(json_array $branch_rx)"
+		--argjson workflows "$(json_array $workflows)"
+		--arg group $group_by
+		--arg repo $r
+	)
+	rows_of[$r]=$(print -r -- $runs | jq "${jq_args[@]}" "$jqprog") || exit $?
+	lines_of[$r]=$(print -r -- ${rows_of[$r]} | jq -r '.[] | [.group, .branch, .workflow, (.result // ""), (.current // ""),
+		(.success_age // ""), (.failure_age // ""), (.latest_url // ""), (.success_url // ""), (.failure_url // ""), "x"]
+		| join("\u001f")')
+}
+for r in $repos; do load_repo $r; done
+
+if (( json )); then
+	for r in $repos; do
+		if [[ $group_by == none ]]; then
+			print -r -- ${rows_of[$r]} | jq -c --arg r $r '{repo: $r, rows: .}'
+		else
+			print -r -- ${rows_of[$r]} | jq -c --arg r $r '{repo: $r, groups: (reduce .[] as $x ([];
+				if length > 0 and .[-1].group == $x.group then .[-1].rows += [$x]
+				else . + [{group: $x.group, rows: [$x]}] end))}'
+		fi
+	done | jq -s .
+	exit 0
+fi
+
+# ---- open ----
+if (( open )); then
+	typeset -a o_repo o_branch o_wf o_labels o_url
+	nrows=0
+	for r in $repos; do
+	typeset -a lines; lines=("${(@f)lines_of[$r]}")
+	[[ -n ${lines[1]} ]] || continue
+	nrows=$(( nrows + ${#lines} ))
+	for line in $lines; do
+		f=("${(@ps:\x1f:)line}")
+		typeset -A row_labels; row_labels=()
+		typeset -a row_order; row_order=()
+		for kind in ${(s:,:)open_which}; do
+			case $kind in
+				latest) url=$f[8]; name="latest" ;;
+				success) url=$f[9]; name="last success" ;;
+				failure) url=$f[10]; name="last failure" ;;
+			esac
+			[[ -n $url ]] || continue
+			if [[ -z ${row_labels[$url]} ]]; then
+				row_order+=($url); row_labels[$url]=$name
+			else
+				row_labels[$url]+="/$name"
+			fi
+		done
+		for url in $row_order; do
+			o_repo+=("$r"); o_branch+=("$f[2]"); o_wf+=("$f[3]"); o_labels+=("${row_labels[$url]}"); o_url+=("$url")
+		done
+	done
+	done
+	(( ${#o_url} )) || { print -r -- "Nothing to open."; exit 0 }
+	if (( ${#o_url} > 5 && ! yes )); then
+		[[ -t 0 && -t 1 ]] || die "$nrows rows, ${#o_url} URLs: pass --yes to open them without a terminal"
+		read -q "ans?$nrows rows, ${#o_url} URLs. Open all? [y/N] " || { print; exit 1 }
+		print
+	fi
+	wb=0; ww=0; wl=0
+	if (( ${#repos} > 1 )); then
+		for i in {1..${#o_url}}; do o_branch[i]="${o_repo[i]##*/}  ${o_branch[i]}"; done
+	fi
+	for i in {1..${#o_url}}; do
+		(( ${#o_branch[i]} > wb )) && wb=${#o_branch[i]}
+		(( ${#o_wf[i]} > ww )) && ww=${#o_wf[i]}
+		(( ${#o_labels[i]} > wl )) && wl=${#o_labels[i]}
+	done
+	print "opening ${#o_url} URLs:"
+	for i in {1..${#o_url}}; do
+		print -r -- "  ${(r:$wb:)o_branch[i]}  ${(r:$ww:)o_wf[i]}  ${(r:$wl:)o_labels[i]}  ${o_url[i]}"
+	done
+	if [[ $OSTYPE == darwin* ]]; then opener=open; else opener=xdg-open; fi
+	for u in $o_url; do $opener $u; done
+	exit 0
+fi
+
+# ---- table ----
+typeset -a g_branch g_wf g_result g_current g_succ g_fail
+cur_group=""
+first_group=1
+
+status_cell() {  # sets cell_plain and cell_color from $1 result and $2 current
+	local icon="" icolor="" now="" nowtxt=""
+	case $1 in
+		success) icon="✔"; icolor=$c_green ;;
+		failure) icon="✘"; icolor=$c_red ;;
+		"") ;;
+		*) icon="○"; icolor=$c_dim ;;
+	esac
+	case $2 in
+		running) nowtxt="● running" ;;
+		queued) nowtxt="◌ queued" ;;
+		"needs approval") nowtxt="⏸ needs approval" ;;
+	esac
+	cell_plain="$icon${icon:+${nowtxt:+ }}$nowtxt"
+	cell_color=""
+	[[ -n $icon ]] && cell_color="${icolor}${icon}${c_off}"
+	[[ -n $nowtxt ]] && cell_color+="${icon:+ }${c_yellow}${nowtxt}${c_off}"
+	[[ -n $cell_plain ]] || { cell_plain="-"; cell_color="${c_dim}-${c_off}" }
+}
+
+flush_group() {
+	(( ${#g_wf} )) || return
+	local show_branch=1 show_wf=1 indent="  " label
+	[[ $group_by == branch ]] && show_branch=0
+	[[ $group_by == workflow ]] && show_wf=0
+	[[ $group_by == none ]] && indent=""
+	(( first_group )) || print
+	first_group=0
+	if [[ $group_by != none ]]; then
+		label=$cur_group
+		[[ $group_by == status ]] && label+=" (${#g_wf})"
+		case $cur_group in
+			"✘"*) print -r -- "${c_red}${c_bold}${label}${c_off}" ;;
+			"✔"*) print -r -- "${c_green}${c_bold}${label}${c_off}" ;;
+			*) print -r -- "${c_bold}${label}${c_off}" ;;
+		esac
+	fi
+	local wb=6 ww=8 ws=6 wsu=12 i pad
+	local spaces="                                                  "
+	local -a plain color
+	for i in {1..${#g_wf}}; do
+		status_cell "$g_result[i]" "$g_current[i]"
+		plain+=("$cell_plain"); color+=("$cell_color")
+		(( ${#g_branch[i]} > wb )) && wb=${#g_branch[i]}
+		(( ${#g_wf[i]} > ww )) && ww=${#g_wf[i]}
+		(( ${#cell_plain} > ws )) && ws=${#cell_plain}
+		(( ${#g_succ[i]} > wsu )) && wsu=${#g_succ[i]}
+	done
+	local head="$indent"
+	(( show_branch )) && head+="${(r:$wb:)${:-BRANCH}}   "
+	(( show_wf )) && head+="${(r:$ww:)${:-WORKFLOW}}   "
+	head+="${(r:$ws:)${:-STATUS}}   ${(r:$wsu:)${:-LAST SUCCESS}}   LAST FAILURE"
+	print -r -- "${c_dim}${head}${c_off}"
+	local out succ fail
+	for i in {1..${#g_wf}}; do
+		out="$indent"
+		(( show_branch )) && out+="${(r:$wb:)g_branch[i]}   "
+		(( show_wf )) && out+="${(r:$ww:)g_wf[i]}   "
+		pad=$(( ws - ${#plain[i]} ))
+		out+="${color[i]}${spaces[1,pad]}   "
+		succ=${g_succ[i]:--}; fail=${g_fail[i]:--}
+		out+="${(r:$wsu:)succ}   ${fail}"
+		print -r -- "$out"
+	done
+	g_branch=(); g_wf=(); g_result=(); g_current=(); g_succ=(); g_fail=()
+}
+
+first_repo=1
+for r in $repos; do
+	(( first_repo )) || print
+	first_repo=0
+	typeset -a lines; lines=("${(@f)lines_of[$r]}")
+	if [[ -z ${lines[1]} ]]; then
+		print -r -- "$r: no matching runs (${scanned_of[$r]} runs scanned)"
+		continue
+	fi
+	print -r -- "${c_bold}$r${c_off}  (${scanned_of[$r]} runs scanned)"
+	print
+	cur_group=""
+	first_group=1
+	for line in $lines; do
+		f=("${(@ps:\x1f:)line}")
+		if [[ $f[1] != $cur_group ]]; then
+			flush_group
+			cur_group=$f[1]
+		fi
+		g_branch+=("$f[2]"); g_wf+=("$f[3]"); g_result+=("$f[4]"); g_current+=("$f[5]"); g_succ+=("$f[6]"); g_fail+=("$f[7]")
+	done
+	flush_group
+done

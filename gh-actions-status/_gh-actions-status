@@ -1,0 +1,92 @@
+#compdef gh-actions-status ghas
+
+# the repository the command would use: an OWNER/REPO word, ~/code/OWNER/REPO, or the current repository
+_gh-actions-status-repo() {
+	local w rel
+	local -a parts
+	for w in ${words[2,-1]}; do
+		[[ $w == */* && $w != -* ]] && { print -r -- $w; return }
+	done
+	rel=${PWD#$HOME/code/}
+	if [[ $rel != $PWD ]]; then
+		parts=(${(s:/:)rel})
+		(( ${#parts} >= 2 )) && { print -r -- "${parts[1]}/${parts[2]}"; return }
+	fi
+	gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null
+}
+
+# run a command and keep its output for 5 minutes: _gh-actions-status-cached KEY COMMAND...
+_gh-actions-status-cached() {
+	local key=${1//\//_} dir=${XDG_CACHE_HOME:-$HOME/.cache}/gh-actions-status
+	shift
+	mkdir -p $dir 2>/dev/null
+	if [[ -z $(find $dir/$key -mmin -5 2>/dev/null) ]]; then
+		"$@" >$dir/$key 2>/dev/null || { rm -f $dir/$key; return 1 }
+	fi
+	cat $dir/$key
+}
+
+_gh-actions-status-statuses() {
+	local -a values
+	values=(
+		'success:the last completed run succeeded'
+		'failure:the last completed run failed'
+		'cancelled:the last completed run was cancelled'
+		'skipped:the last completed run was skipped'
+		'running:a run is in progress'
+		'queued:a run is waiting for a runner'
+		'action_required:a run waits for a maintainer to approve it'
+	)
+	_describe -t statuses 'status' values
+}
+
+_gh-actions-status-workflows() {
+	local repo=$(_gh-actions-status-repo)
+	[[ -n $repo ]] || return 1
+	local -a names
+	names=("${(@f)$(_gh-actions-status-cached workflows-$repo gh workflow list -R $repo -L 500 --json name -q '.[].name')}")
+	_wanted workflows expl 'workflow' compadd -a names
+}
+
+_gh-actions-status-branches() {
+	local repo=$(_gh-actions-status-repo)
+	[[ -n $repo ]] || return 1
+	local -a names
+	names=("${(@f)$(_gh-actions-status-cached branches-$repo gh api "repos/$repo/branches?per_page=100" --paginate -q '.[].name')}")
+	_wanted branches expl 'branch' compadd -a names
+}
+
+_gh-actions-status-kinds() {
+	_values -s , 'run' latest success failure
+}
+
+_gh-actions-status-repos() {
+	local -a repos
+	repos=(${${(f)"$(print -rl -- $HOME/code/*/*(N/) 2>/dev/null)"}#$HOME/code/})
+	_wanted repositories expl 'owner/repo' compadd -a repos
+	# after -o the next word may also be the runs to open
+	if [[ ${words[CURRENT-1]} == (-o|--open) ]]; then
+		_gh-actions-status-kinds
+	fi
+}
+
+_gh-actions-status() {
+	_arguments -s -S \
+		'*'{-s,--status}'[only rows with this status (success, failure, running, ...)]:status:_gh-actions-status-statuses' \
+		'*'{-w,--workflow}'[only workflows whose name or file name contains this]:workflow:_gh-actions-status-workflows' \
+		'*'{-b,--branch}'[only this branch (globs allowed)]:branch:_gh-actions-status-branches' \
+		'(-e --event)'{-e,--event}'[only runs of this event]:event:(push pull_request pull_request_target schedule workflow_dispatch workflow_run release)' \
+		'--supported[only main and N.N.x branches (and embargoed/*/ of those)]' \
+		'(--commercial-only)--no-commercial[do not show the commercial repository]' \
+		'(--no-commercial)--commercial-only[show only the commercial repository]' \
+		'--commercial-repo=[the commercial repository]:repository (OWNER/REPO):_gh-actions-status-repos' \
+		'(-g --group-by)'{-g,--group-by}'[group the rows by]:group:(branch status workflow none)' \
+		'(-L --limit)'{-L,--limit}'[runs to scan (default 500, max 1000)]:runs:' \
+		'(-o --open)'{-o-,--open=-}'[open the runs of the listed rows in the browser]::runs:_gh-actions-status-kinds' \
+		'(-y --yes)'{-y,--yes}'[do not ask before opening more than 5 URLs]' \
+		'--json[print the rows as JSON]' \
+		'(-h --help)'{-h,--help}'[show this help message]' \
+		'*::repository:_gh-actions-status-repos'
+}
+
+_gh-actions-status "$@"

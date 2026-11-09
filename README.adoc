@@ -28,6 +28,7 @@ antigen bundle zsh-users/zsh-completions
 antigen bundle rwinch/zsh-plugins antora-rename
 antigen bundle rwinch/zsh-plugins awake
 antigen bundle rwinch/zsh-plugins copy
+antigen bundle rwinch/zsh-plugins gh-actions-status
 antigen bundle rwinch/zsh-plugins gh-block-embargoed-branches
 antigen bundle rwinch/zsh-plugins gh-create-subissue
 antigen bundle rwinch/zsh-plugins gh-milestones
