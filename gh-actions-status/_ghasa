@@ -1,0 +1,3 @@
+#compdef ghasa
+
+_gh-actions-status "$@"

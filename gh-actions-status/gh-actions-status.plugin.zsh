@@ -15,4 +15,3 @@ ghasa() {
 		spring-projects/spring-security spring-projects/spring-security-commercial \
 		spring-projects/spring-session spring-projects/spring-session-commercial
 }
-(( $+functions[compdef] )) && compdef _gh-actions-status ghasa
