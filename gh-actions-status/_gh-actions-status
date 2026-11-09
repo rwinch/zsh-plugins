@@ -76,6 +76,7 @@ _gh-actions-status() {
 		'*'{-w,--workflow}'[only workflows whose name or file name contains this]:workflow:_gh-actions-status-workflows' \
 		'*'{-b,--branch}'[only this branch (globs allowed)]:branch:_gh-actions-status-branches' \
 		'(-e --event)'{-e,--event}'[only runs of this event]:event:(push pull_request pull_request_target schedule workflow_dispatch workflow_run release)' \
+		'--all-branches[do not skip any branch (default: *.x, main, docs-build, embargoed/*)]' \
 		'--supported[only main and N.N.x branches (and embargoed/*/ of those)]' \
 		'(--commercial-only)--no-commercial[do not show the commercial repository]' \
 		'(--no-commercial)--commercial-only[show only the commercial repository]' \

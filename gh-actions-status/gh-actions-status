@@ -6,6 +6,7 @@ group_by=branch
 limit=500
 event=""
 supported=0
+all_branches=0
 open=0
 open_which="latest,success,failure"
 yes=0
@@ -33,9 +34,12 @@ Options:
   -s, --status STATUS   success|failure|cancelled|skipped|running|queued|action_required
                         (matches either part of STATUS; repeatable or comma separated)
   -w, --workflow NAME   workflow name or file name, a substring (repeatable)
-  -b, --branch NAME     branch, globs allowed (repeatable)
+  -b, --branch NAME     branch, globs allowed (repeatable). Default: *.x, main, docs-build and
+                        embargoed/*, the other branches are skipped
+      --all-branches    do not skip any branch
   -e, --event EVENT     push|pull_request|schedule|... (default: all)
       --supported       only main and N.N.x branches (and embargoed/{active,frozen,lts}/ of those)
+                        instead of the default branches
       --no-commercial   do not show the commercial repository
       --commercial-only show only the commercial repository
       --commercial-repo OWNER/REPO
@@ -70,6 +74,7 @@ while (( $# )); do
 		--status=*|--workflow=*|--branch=*|--event=*|--group-by=*|--limit=*|--commercial-repo=*)
 			opt=${1%%=*}; val=${1#*=}; shift ;;
 		--supported) supported=1; shift; continue ;;
+		--all-branches) all_branches=1; shift; continue ;;
 		--no-commercial) no_commercial=1; shift; continue ;;
 		--commercial-only) commercial_only=1; shift; continue ;;
 		-y|--yes) yes=1; shift; continue ;;
@@ -181,6 +186,10 @@ for b in $branches; do
 	r=${b//./\\.}; r=${r//+/\\+}; r=${r//\*/.*}; r=${r//\?/.}
 	branch_rx+=("^${r}\$")
 done
+# no branch given: the default branches (*.x, main, docs-build, embargoed/*)
+if (( ${#branches} == 0 && ! supported && ! all_branches )); then
+	branch_rx=('^[^/]*\.x$' '^main$' '^docs-build$' '^embargoed/.*$')
+fi
 (( supported )) && branch_rx+=('^(main|[0-9]+\.[0-9]+\.x)$' '^embargoed/(active|frozen|lts)/(main|[0-9]+\.[0-9]+\.x)$')
 
 read -r -d '' jqprog <<'JQ'
@@ -258,14 +267,15 @@ JQ
 # ---- fetch every repository ----
 typeset -A rows_of scanned_of lines_of
 now_epoch=$(date +%s)
+# load_repo REPO FILEPREFIX: writes FILEPREFIX.scanned, .rows and .lines
 load_repo() {
-	local r=$1 runs wfs
+	local r=$1 out=$2 runs wfs
 	local -a run_args jq_args
 	run_args=(run list -R $r -L $limit --json databaseId,workflowName,workflowDatabaseId,headBranch,status,conclusion,createdAt,url,event)
 	[[ -n $event ]] && run_args+=(--event $event)
 	runs=$(gh $run_args) || exit $?
 	wfs=$(gh workflow list -R $r -L 500 --json id,name,path) || exit $?
-	scanned_of[$r]=$(print -r -- $runs | jq length)
+	print -r -- $runs | jq length >$out.scanned || exit $?
 	jq_args=(
 		--argjson now $now_epoch
 		--argjson wfs "$wfs"
@@ -275,12 +285,36 @@ load_repo() {
 		--arg group $group_by
 		--arg repo $r
 	)
-	rows_of[$r]=$(print -r -- $runs | jq "${jq_args[@]}" "$jqprog") || exit $?
-	lines_of[$r]=$(print -r -- ${rows_of[$r]} | jq -r '.[] | [.group, .branch, .workflow, (.result // ""), (.current // ""),
+	print -r -- $runs | jq "${jq_args[@]}" "$jqprog" >$out.rows || exit $?
+	jq -r '.[] | [.group, .branch, .workflow, (.result // ""), (.current // ""),
 		(.success_age // ""), (.failure_age // ""), (.latest_url // ""), (.success_url // ""), (.failure_url // ""), "x"]
-		| join("\u001f")')
+		| join("\u001f")' <$out.rows >$out.lines || exit $?
 }
-for r in $repos; do load_repo $r; done
+
+# the repositories are fetched at the same time, fetching the runs is what takes the time
+tmpdir=$(mktemp -d) || exit 1
+trap 'rm -rf $tmpdir' EXIT
+typeset -a pids
+i=0
+for r in $repos; do
+	(( i++ ))
+	load_repo $r $tmpdir/$i &
+	pids+=($!)
+done
+i=0
+failed=0
+for r in $repos; do
+	(( i++ ))
+	wait ${pids[i]} || failed=1
+done
+(( failed )) && exit 1
+i=0
+for r in $repos; do
+	(( i++ ))
+	scanned_of[$r]=$(<$tmpdir/$i.scanned)
+	rows_of[$r]=$(<$tmpdir/$i.rows)
+	lines_of[$r]=$(<$tmpdir/$i.lines)
+done
 
 if (( json )); then
 	for r in $repos; do

@@ -53,9 +53,10 @@ Branches are ordered `main`, the `N.N.x` branches (newest first) and then the ot
 | Option | Description
 | `-s`, `--status STATUS` | `success`, `failure`, `cancelled`, `skipped`, `running`, `queued` or `action_required`. Matches either part of STATUS, so `-s failure` also finds a workflow that failed and is running again. Repeatable or comma separated
 | `-w`, `--workflow NAME` | Workflow name or file name, a case insensitive substring. Repeatable
-| `-b`, `--branch NAME` | Branch, globs allowed (`-b '7.*.x'`). Repeatable
+| `-b`, `--branch NAME` | Branch, globs allowed (`-b '7.*.x'`). Repeatable. Without it only `*.x`, `main`, `docs-build` and `embargoed/*` are shown and the other branches (pull requests, Dependabot, feature branches) are skipped
+| `--all-branches` | Do not skip any branch
 | `-e`, `--event EVENT` | Only runs of this event, for example `push` hides the pull request and Dependabot noise
-| `--supported` | Only `main` and the `N.N.x` branches, and `embargoed/{active,frozen,lts}/` of those
+| `--supported` | Only `main` and the `N.N.x` branches, and `embargoed/{active,frozen,lts}/` of those, instead of the default branches
 | `--no-commercial` | Do not show the commercial repository
 | `--commercial-only` | Show only the commercial repository
 | `--commercial-repo OWNER/REPO` | The commercial repository, shown last, also when `OWNER/REPO` arguments are given
@@ -90,6 +91,8 @@ zsh completion is included. It completes the options, the statuses, the workflow
 
 == Notes
 
+* Fetching the runs takes about 12 seconds per repository for the default 500 runs (`gh` reads them 100 at a time), so the repositories are fetched at the same time. `--limit 200` is about 2.5 times faster, at the cost of looking back less far.
+* The branches are filtered after the runs are fetched, so the runs of the skipped branches still count in the scan. Branches that are busy with pull request runs can push the older runs of the other branches out of the window, raise `--limit` when a workflow shows `-` that you expect to have run.
 * The last success and last failure come from the same scan of the most recent runs. A workflow that has not run in a long time can show `-` even though an older run exists. Raise `--limit` to look further back.
 * A run that waits for approval (`action_required`) is shown as `⏸ needs approval` and is not counted as a completed run.
 
