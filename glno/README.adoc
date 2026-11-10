@@ -1,0 +1,46 @@
+= glno
+
+A zsh plugin that runs `git log` without the commits that were brought in by `git merge -s ours` merges.
+
+== Overview
+
+A forward merge done with `-s ours` (see `gmo`) records the merge but discards the other branch's changes. `git log` still lists every commit from that branch, which is noise. `glno` hides those commits and keeps the commits from real merges.
+
+A merge is treated as an `ours` merge when its tree is identical to its first parent's tree. The second parent of each such merge is excluded from the log.
+
+=== Why `glno`?
+
+`glno` ("git log, no ours") follows the oh-my-zsh git plugin's `gl*` log aliases (`glo`, `glog`, `glol`, ...) and pairs with `gmo` ("git merge ours"). It is a bare command, not a `git <subcommand>`.
+
+== Installation
+
+Can be installed using antigen:
+
+[source,bash]
+----
+antigen bundle rwinch/zsh-plugins glno
+----
+
+Or manually by adding the plugin directory to your `PATH`.
+
+== Usage
+
+[source,bash]
+----
+glno [RANGE] [GIT_LOG_OPTIONS...]
+----
+
+`RANGE` defaults to `HEAD`. Use a range such as `origin/7.0.x..HEAD` to keep it fast, since every merge in the range is inspected. Other options go to `git log`.
+
+[source,bash]
+----
+glno origin/7.0.x..HEAD --oneline
+glno 7.0.7..HEAD --oneline --no-merges
+----
+
+The ours merge commits stay visible unless `--no-merges` is given.
+
+== Caveats
+
+* A commit reachable from both an ours-merged branch and a real merge is also hidden.
+* Octopus merges are not handled.

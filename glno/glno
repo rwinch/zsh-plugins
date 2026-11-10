@@ -1,0 +1,72 @@
+#!/bin/zsh
+
+# Named 'glno' ("git log, no ours") to match the oh-my-zsh git plugin's short
+# alias convention (glo, glog, glol, ...) and to pair with 'gmo' ("git merge
+# ours"). Invoked as a bare command rather than a 'git <subcommand>'.
+
+usage() {
+	cat <<USAGE
+Usage: glno [RANGE] [GIT_LOG_OPTIONS...]
+
+Run 'git log' but hide the commits that were brought in by 'git merge -s ours'
+merges, since their changes were discarded.
+
+ARGUMENTS:
+  RANGE   Revision range to inspect (default: HEAD). A range such as
+          origin/7.0.x..HEAD is recommended, since every merge in the range
+          is inspected.
+
+OPTIONS:
+  --help, -h   Display this help message
+
+  Any other options are passed through to 'git log' (for example --oneline
+  or --no-merges). The ours merge commits themselves stay visible unless
+  --no-merges is given.
+
+BEHAVIOR:
+  - A merge is treated as an 'ours' merge when its tree is identical to its
+    first parent's tree.
+  - The second parent of each such merge is excluded from the log.
+
+CAVEATS:
+  - A commit reachable from both an ours-merged branch and a real merge is
+    also hidden.
+  - Octopus merges are not handled.
+
+EXAMPLES:
+  glno origin/7.0.x..HEAD --oneline
+  glno 7.0.7..HEAD --oneline --no-merges
+
+USAGE
+}
+
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+	usage
+	exit 0
+fi
+
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+	echo "Error: Not in a git repository" >&2
+	exit 1
+fi
+
+range=HEAD
+if [[ -n "$1" && "$1" != -* ]]; then
+	range="$1"
+	shift
+fi
+
+if ! merges=$(git rev-list --merges "$range" -- 2>&1); then
+	echo "Error: Invalid range '$range'" >&2
+	echo "$merges" >&2
+	exit 1
+fi
+
+excludes=()
+for m in ${(f)merges}; do
+	if git diff --quiet "$m^1" "$m"; then
+		excludes+=("^$m^2")
+	fi
+done
+
+git log "$range" "${excludes[@]}" "$@"
