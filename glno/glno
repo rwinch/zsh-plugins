@@ -19,9 +19,8 @@ ARGUMENTS:
 OPTIONS:
   --help, -h   Display this help message
 
-  Any other options are passed through to 'git log' (for example --oneline
-  or --no-merges). The ours merge commits themselves stay visible unless
-  --no-merges is given.
+  Any other options are passed through to 'git log' (for example --oneline).
+  --no-merges is always passed, so no merge commits are shown.
 
 BEHAVIOR:
   - A merge is treated as an 'ours' merge when its tree is identical to its
@@ -35,7 +34,7 @@ CAVEATS:
 
 EXAMPLES:
   glno origin/7.0.x..HEAD --oneline
-  glno 7.0.7..HEAD --oneline --no-merges
+  glno 7.0.7..HEAD --oneline
 
 USAGE
 }
@@ -69,4 +68,4 @@ for m in ${(f)merges}; do
 	fi
 done
 
-git log "$range" "${excludes[@]}" "$@"
+git log --no-merges "$range" "${excludes[@]}" "$@"

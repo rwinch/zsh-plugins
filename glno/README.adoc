@@ -30,15 +30,13 @@ Or manually by adding the plugin directory to your `PATH`.
 glno [RANGE] [GIT_LOG_OPTIONS...]
 ----
 
-`RANGE` defaults to `HEAD`. Use a range such as `origin/7.0.x..HEAD` to keep it fast, since every merge in the range is inspected. Other options go to `git log`.
+`RANGE` defaults to `HEAD`. Use a range such as `origin/7.0.x..HEAD` to keep it fast, since every merge in the range is inspected. `--no-merges` is always passed, so no merge commits are shown. Other options go to `git log`.
 
 [source,bash]
 ----
 glno origin/7.0.x..HEAD --oneline
-glno 7.0.7..HEAD --oneline --no-merges
+glno 7.0.7..HEAD --oneline
 ----
-
-The ours merge commits stay visible unless `--no-merges` is given.
 
 == Caveats
 
